@@ -7,8 +7,10 @@
 - **海外小说监测**：Wattpad（API）、Royal Road（周榜）、Syosetu（日/周/月榜）。
 - **海外短剧监测**：聚合抓取 NetShort、ShortMax、ReelShort、DramaBox、DramaReels、DramaWave、GoodShort、MoboReels 共 8 个平台。
 - **独立分表存储**：小说写入 `novels`，短剧写入 `dramas`，互不混合。
-- **GHI 适配度分析**：小说列表在 ClickHouse 查询层计算 `S_popular`、`S_engage`、`S_adapt` 与综合 `GHI`，并标记"黄金三秒钩子"。
+- **GHI 适配度分析**（小说）：在 ClickHouse 查询层计算 `S_popular`、`S_engage`、`S_adapt` 与综合 `GHI`，并标记"黄金三秒钩子"。
+- **DHI 热度指数**（短剧）：在 ClickHouse 查询层计算 `S_tag`、`S_position`、`S_recency` 与综合 `DHI`（题材匹配 ×0.45 + 资源位强度 ×0.35 + 数据新鲜度 ×0.20）。
 - **短剧栏位识别**：按平台首页栏位写入 `rank_type`（如"轮播推荐 / 推荐栏位 / 最近上新 / 顶部推荐 / 近期热门"，具体名称由各平台决定）。
+- **选品罗盘可视化**：短剧 Tab 内嵌 3-Tab 可视化（数据概览 / 趋势洞察 / 表现榜单），含标签热度散点四象限、平台 × 栏位热力图。
 - **后台爬取任务**：API/前端触发，立即返回 `task_id`，前端轮询进度。
 - **APScheduler 定时任务**：日榜、周榜、月榜按 cron 自动跑。
 
@@ -419,9 +421,10 @@ GET /health
 
 - 引擎：`ReplacingMergeTree(created_at)`，`ORDER BY (platform, title)`，分区同上。
 - 核心字段：`title / summary / cover_url / tags / episodes / rank_in_platform / heat_score / platform / lang / rank_type / crawl_date / source_url / created_at`。
+- 列表 / 详情接口在 SELECT 时叠加 DHI 三分项与综合分（`s_tag` / `s_position` / `s_recency` / `dhi`），**不存储到表里**，每次查询动态计算。
 - 抓取完成后自动执行 `OPTIMIZE TABLE dramas FINAL` 触发去重合并。
 
-### GHI 算法（在 ClickHouse SQL 内计算）
+### GHI 算法（小说，在 ClickHouse SQL 内计算）
 
 ```text
 GHI = S_popular × 0.3 + S_engage × 0.3 + S_adapt × 0.4
@@ -432,6 +435,25 @@ S_adapt   = 爬虫端预计算（标签命中 S/A 级映射）
 has_hook  = summary 包含 reborn/rebirth/revenge/betrayed/transmigrat/identity/
             reincarnation/regression/villainess/abandoned/second chance 任一关键词
 ```
+
+### DHI 算法（短剧，在 ClickHouse SQL 内计算）
+
+```text
+DHI = S_tag × 0.45 + S_position × 0.35 + S_recency × 0.20
+
+S_tag      = min(50 + s_hits × 25 + a_hits × 12, 100)              # 基线 50，S 级 +25，A 级 +12
+S_position = max(100 - (rank_in_platform - 1) × 8, 0)              # 第 1 名 100，每后退 -8
+S_recency  = max(100 - 10 × dateDiff('day', crawl_date, today()), 0)  # 今天 100，每过一天 -10，10 天前归零
+```
+
+S 级标签（10 个）：`werewolf / revenge / rebirth / reincarnation / reborn / karma payback /
+hidden identity / secret identity / comeback / mafia`
+
+A 级标签（10 个）：`ceo / billionaire / modern romance / contract marriage / sweet /
+underdog rise / strong female lead / urban fantasy / one night stand / family`
+
+> 标签清单维护在 [`backend/routers/dramas.py`](backend/routers/dramas.py) 的 `_S_TAGS_DRAMA` / `_A_TAGS_DRAMA`。
+> 修改后只要重启后端即可生效，**无需重抓数据**（DHI 是查询时算的）。
 
 ## 定时任务
 
@@ -504,7 +526,7 @@ vite.config.js 的 proxy 已默认透传 cookie，无需特殊配置。如自定
 - 前端尽量使用 Tailwind CSS，不新增自定义 CSS。
 - 后端 SQL 必须使用 ClickHouse 参数化写法（`{name:Type}`），禁止字符串拼接用户输入。
 - 小说与短剧数据**必须分表**存储。
-- GHI 口径由 ClickHouse 统一计算，**前端只做展示**，不要重算。
+- GHI / DHI 口径由 ClickHouse 统一计算，**前端只做展示**，不要重算。
 - 爬虫缺失数值返回 `None`，禁止 0/空串占位（会污染 GHI）。
 - 新增爬虫请走 [.claude/skills/add-scraper/SKILL.md](.claude/skills/add-scraper/SKILL.md) 的标准流程；AI 协作约定见 [CLAUDE.md](CLAUDE.md)。
 - **新增业务 router 必须挂在 `Depends(require_user)` 守卫下**，参考 [`backend/main.py`](backend/main.py) 的 `_protected` 注入方式，禁止裸出。

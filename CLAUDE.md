@@ -11,10 +11,12 @@
 
 数据流：
 ```
-scraper(list[dict]) → service(batch_insert) → ClickHouse → SQL 内算 GHI → React 展示
+scraper(list[dict]) → service(batch_insert) → ClickHouse → SQL 内算 GHI(小说) / DHI(短剧) → React 展示
 ```
 
-GHI / S_popular / S_engage / S_adapt / has_hook **全部在 ClickHouse 查询层算**，前端只做展示。
+- 小说：GHI / S_popular / S_engage / S_adapt / has_hook **全部在 ClickHouse 查询层算**
+- 短剧：DHI / S_tag / S_position / S_recency **全部在 ClickHouse 查询层算**（不入表，每次 SELECT 时叠加）
+- 前端只做展示，不要重算分数
 
 ---
 
@@ -41,6 +43,7 @@ GHI / S_popular / S_engage / S_adapt / has_hook **全部在 ClickHouse 查询层
 | **`zhangwan-ui/`** | ⚠️ **独立 Vue 3 设计系统资源，与本项目无关，禁止改动** |
 | [run_wattpad_keywords.py](run_wattpad_keywords.py) | 一次性脚本（关键词回填），不是定时任务；连接信息走环境变量，缺失会 fail-fast |
 | [启动.bat](启动.bat) | Windows 一键启动后端 + 前端（轮询端口 + 自动 npm install） |
+| [docs/PRODUCTION.md](docs/PRODUCTION.md) | **生产部署快照**：服务器位置、运行容器、当前限制 — 进入项目首先读这份 |
 
 ---
 
@@ -69,17 +72,19 @@ open http://localhost:8000/docs
 
 ## 4. ⚠️ 必须遵守的硬约束
 
-> 这里列的都是 README 没写、但代码里强制成立的契约。违反会污染 GHI、丢数据、或破坏并发。
+> 这里列的都是 README 没写、但代码里强制成立的契约。违反会污染 GHI / DHI、丢数据、或破坏并发。
 
-1. **数据缺失统一返回 `None`**，禁止用 `0` / `""` 占位 — 会被 GHI 当真实值参与排名。`base_scraper._safe_int_or_none()` 已封装好。
+1. **数据缺失统一返回 `None`**，禁止用 `0` / `""` 占位 — 会被 GHI / DHI 当真实值参与排名。`base_scraper._safe_int_or_none()` 已封装好。
 2. **小说 → `novels` 表 / 短剧 → `dramas` 表，禁止混表**。
-3. **GHI 在 ClickHouse SQL 内计算**，前端只做展示。不要在 React 里重算分数。
+3. **GHI（小说）/ DHI（短剧）必须在 ClickHouse SQL 内计算**，前端只做展示。不要在 React 里重算分数。GHI 模板在 [`backend/routers/novels.py`](backend/routers/novels.py)，DHI 模板在 [`backend/routers/dramas.py`](backend/routers/dramas.py) 的 `_DHI_SQL_TEMPLATE`。
 4. **新增 ClickHouse 字段必须四处同步**：[`database.py`](backend/database.py) 的 DDL + `_MIGRATE_SQL` + `_INSERT_COLUMNS`(或 `_DRAMA_INSERT_COLUMNS`) + [`models.py`](backend/models.py)。漏一处就会整批写入失败。
 5. **scraper 必须继承三件套之一**：`BaseHttpScraper` / `BasePlaywrightScraper` / `BaseShortDramaScraper`。**禁止** scraper 里直接 `requests.get()` —— 会丢失重试和代理回退。
 6. **scraper 只 `return list[dict]`**，不直接连 ClickHouse；写入由 `services/*scraper_service.py` 负责。
 7. **ClickHouse 客户端必须 `autogenerate_session_id=False`**，并发请求每次用 `database.get_client()` 取独立 client，不要做模块级单例。
 8. **Playwright 浏览器生命周期由 `BasePlaywrightScraper.scrape()` 管理**，子类如需二次抓取（章节正文等），必须覆盖 `_enrich_results(context, results)` 复用已打开的 `BrowserContext`。
-9. **`_calc_s_adapt` 阈值 / `_S_TAGS` / `_A_TAGS`** 在 [`base_scraper.py`](backend/scrapers/base_scraper.py)，改动会直接影响 GHI 排名 — 先和用户确认再动。
+9. **GHI / DHI 标签清单**改动会直接影响排名，必须先和用户确认：
+   - 小说：`_calc_s_adapt` 阈值 / `_S_TAGS` / `_A_TAGS` 在 [`backend/scrapers/base_scraper.py`](backend/scrapers/base_scraper.py)
+   - 短剧：`_S_TAGS_DRAMA` / `_A_TAGS_DRAMA` 在 [`backend/routers/dramas.py`](backend/routers/dramas.py)（DHI 是 SQL 内算的，改完重启后端立即生效，**无需重抓**）
 10. **真实数据库密码 / `.env` 内容**禁止写进任何文档或提交到仓库。
 11. **新业务 router 必须挂在 `Depends(require_user)` 下**（[`backend/main.py`](backend/main.py) 用 `_protected` 列表统一注入），裸出业务接口等同 P0 故障。
 12. **JWT_SECRET 不能为空**：[`backend/main.py`](backend/main.py) 启动时 fail-fast；本地用 `openssl rand -hex 32` 生成写入 `backend/.env`。
@@ -117,12 +122,15 @@ open http://localhost:8000/docs
 |------|------|------------|
 | `title` / `platform` / `source_url` | `str` | 必填 |
 | `summary` / `cover_url` | `str` | 缺失填 `""` |
-| `tags` | `list[str]` | 详情页补全见 `_enrich_items_from_detail_pages` |
+| `tags` | `list[str]` | 详情页补全见 `_enrich_items_from_detail_pages`；DHI 的 `S_tag` 靠它命中 S/A 级 |
 | `episodes` | `int \| None` | 解析不到 None |
-| `rank_in_platform` | `int` | 1 起 |
-| `heat_score` | `float` | 由名次换算（聚合层会算） |
+| `rank_in_platform` | `int` | 1 起；DHI 的 `S_position` 靠它换算 |
+| `heat_score` | `float` | 由名次换算（聚合层会算）；**前端不再展示**，被 DHI 取代 |
 | `rank_type` | `str` | `轮播推荐` / `推荐栏位` / `最近上新` |
-| `crawl_date` | `date` | 当天 |
+| `crawl_date` | `date` | 当天；DHI 的 `S_recency` 靠它衰减（10 天前归零） |
+
+> **DHI（前端展示的综合分）= S_tag × 0.45 + S_position × 0.35 + S_recency × 0.20**
+> 三分项都在 SQL 内算，不入库；改算法不需要重抓数据。
 
 ---
 
