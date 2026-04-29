@@ -1,13 +1,19 @@
-# 生产形态 compose：Caddy(443/80) → frontend(nginx) → backend(FastAPI) → ClickHouse(外部)
+# 生产形态 compose：Caddy(443/80) → frontend(nginx) → backend(FastAPI) → clickhouse(同栈)
 #
 # 本地 dev 请用 `启动.bat` 或手动 `npm run dev` + uvicorn，或加载 docker-compose.dev.yml override：
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 #
 # 上云步骤：
-#   1. 准备 .env.production（复制 .env.production.example，填 JWT_SECRET / AUTH_USERS / DOMAIN 等）
+#   1. 准备 .env.production（复制 .env.production.example，填 JWT_SECRET / DOMAIN / CLICKHOUSE_PASSWORD 等）
 #   2. docker compose --env-file .env.production up -d --build
 #   3. 域名 A 记录指向 ECS 公网 IP，开放 80/443
 #   4. Caddy 自动签 Let's Encrypt 证书
+#
+# ClickHouse 部署形态：
+#   默认走"同栈" — 即在本 compose 里跑一个 clickhouse 容器，CLICKHOUSE_HOST=clickhouse
+#   要接外部 ClickHouse（VPC 内网 / 公司机房）：
+#     - 把 CLICKHOUSE_HOST 改成外部地址
+#     - profiles 设 disabled 关闭本地 clickhouse 服务（或直接 docker compose up 时排除）
 
 services:
   backend:
@@ -17,10 +23,10 @@ services:
     container_name: novel_backend
     restart: unless-stopped
     environment:
-      CLICKHOUSE_HOST:     ${CLICKHOUSE_HOST}
+      CLICKHOUSE_HOST:     ${CLICKHOUSE_HOST:-clickhouse}
       CLICKHOUSE_PORT:     ${CLICKHOUSE_PORT:-8123}
       CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE:-analysis}
-      CLICKHOUSE_USERNAME: ${CLICKHOUSE_USERNAME:-default}
+      CLICKHOUSE_USERNAME: ${CLICKHOUSE_USERNAME:-app}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
       SCRAPER_HEADLESS:    "true"
       # 鉴权
@@ -39,6 +45,37 @@ services:
       - backend_data:/data    # SQLite 用户库等持久化
     expose:
       - "8000"                # 仅对 compose 内网开放，不暴露宿主端口
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    networks:
+      - app
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24-alpine
+    container_name: novel_clickhouse
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_DB:                       ${CLICKHOUSE_DATABASE:-analysis}
+      CLICKHOUSE_USER:                     ${CLICKHOUSE_USERNAME:-app}
+      CLICKHOUSE_PASSWORD:                 ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - clickhouse_logs:/var/log/clickhouse-server
+    expose:
+      - "8123"   # HTTP 接口，仅对 compose 内网
+      - "9000"   # native TCP，仅对 compose 内网
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8123/ping || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     networks:
       - app
 
@@ -78,6 +115,8 @@ volumes:
   backend_data:
   caddy_data:
   caddy_config:
+  clickhouse_data:
+  clickhouse_logs:
 
 networks:
   app:
