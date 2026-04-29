@@ -35,7 +35,9 @@ services:
       AUTH_SQLITE_PATH:    /data/auth_users.db
       JWT_SECRET:          ${JWT_SECRET}
       JWT_EXPIRE_HOURS:    ${JWT_EXPIRE_HOURS:-8}
-      COOKIE_SECURE:       "true"
+      # COOKIE_SECURE 必须与传输协议匹配：HTTPS=true（默认）/ HTTP=false
+      # 之前写死 "true" 导致 .env 里改 false 也无效，登录后 cookie 拒种 → 反复跳登录页
+      COOKIE_SECURE:       ${COOKIE_SECURE:-true}
       COOKIE_SAMESITE:     ${COOKIE_SAMESITE:-lax}
       REGISTRATION_CODE:   ${REGISTRATION_CODE:-}
       # 定时任务
