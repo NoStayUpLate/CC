@@ -80,7 +80,7 @@ class DramaRow(BaseModel):
 
 
 class DramaOut(BaseModel):
-    """短剧列表/详情输出结构"""
+    """短剧列表/详情输出结构（含 DHI 热度指数）"""
     id: str
     title: str
     summary: Optional[str] = None
@@ -95,6 +95,11 @@ class DramaOut(BaseModel):
     crawl_date: Optional[date] = None
     source_url: str = ""
     created_at: datetime
+    # DHI 三分项 + 综合分（在 ClickHouse SQL 内计算，前端只展示）
+    s_tag: float = 0.0
+    s_position: float = 0.0
+    s_recency: float = 0.0
+    dhi: float = 0.0
 
 
 class DramasResponse(BaseModel):

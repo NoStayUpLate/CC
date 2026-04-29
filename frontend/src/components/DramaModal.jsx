@@ -94,9 +94,45 @@ export default function DramaModal({ drama, onClose }) {
             </Section>
           )}
 
+          <Section title="DHI 热度指数">
+            <div className="rounded-lg border border-zw-border bg-[#f7f8fa] p-4 space-y-3">
+              <div className="flex items-baseline justify-between">
+                <span className="text-xs text-black">综合 DHI</span>
+                <span className="text-2xl font-bold text-brand tabular-nums">
+                  {(drama.dhi || 0).toFixed(1)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-black opacity-70">等级判定</span>
+                <span className={`font-semibold ${dhiLevel(drama.dhi || 0).color}`}>
+                  {dhiLevel(drama.dhi || 0).label}
+                </span>
+              </div>
+              <div className="space-y-2.5 pt-2 border-t border-zw-border">
+                <ScoreBar
+                  label="题材匹配度（×45%）"
+                  value={drama.s_tag || 0}
+                  hint="命中 S/A 级关键标签得分。S 级 +25，A 级 +12，基线 50。"
+                />
+                <ScoreBar
+                  label="资源位强度（×35%）"
+                  value={drama.s_position || 0}
+                  hint="平台内名次靠前程度，第 1 名 100，每后退一位 -8。"
+                />
+                <ScoreBar
+                  label="数据新鲜度（×20%）"
+                  value={drama.s_recency || 0}
+                  hint="距今天数线性衰减，今天 100，每过一天 -10。"
+                />
+              </div>
+              <p className="text-[11px] text-black opacity-60 pt-1">
+                公式：DHI = 题材 × 45% + 资源位 × 35% + 新鲜度 × 20%
+              </p>
+            </div>
+          </Section>
+
           <Section title="基础信息">
             <div className="grid grid-cols-2 gap-3 text-sm">
-              <Info label="热度分" value={(drama.heat_score || 0).toFixed(1)} />
               <Info label="榜单类型" value={drama.rank_type || "未分类"} />
               <Info label="资源位位置" value={`#${drama.rank_in_platform || "-"}`} />
               <Info label="平台" value={drama.platform} />
@@ -135,6 +171,32 @@ function Info({ label, value }) {
     <div className="rounded-lg border border-zw-border bg-[#f7f8fa] px-3 py-2">
       <div className="text-xs text-black">{label}</div>
       <div className="text-black font-medium">{value}</div>
+    </div>
+  );
+}
+
+function dhiLevel(dhi) {
+  if (dhi >= 80) return { label: "S 级爆款潜力", color: "text-brand" };
+  if (dhi >= 65) return { label: "A 级高潜力", color: "text-blue-500" };
+  if (dhi >= 45) return { label: "B 级待观察", color: "text-amber-500" };
+  return { label: "C 级低潜力", color: "text-black" };
+}
+
+function ScoreBar({ label, value, hint }) {
+  const pct = Math.min(Math.max(value, 0), 100);
+  return (
+    <div className="space-y-1">
+      <div className="flex justify-between items-center text-xs">
+        <span className="text-black">{label}</span>
+        <span className="font-bold text-black tabular-nums">{pct.toFixed(1)}</span>
+      </div>
+      <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
+        <div
+          className="h-full rounded-full bg-brand progress-bar-animated"
+          style={{ "--target-width": `${pct}%`, width: `${pct}%` }}
+        />
+      </div>
+      {hint && <p className="text-[10px] text-black opacity-60 leading-relaxed">{hint}</p>}
     </div>
   );
 }

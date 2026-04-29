@@ -1,5 +1,11 @@
 """
 海外短剧列表 & 爬虫 API。
+
+DHI = (S_tag × 0.45) + (S_position × 0.35) + (S_recency × 0.20)
+  S_tag      = least(50 + s_hits × 25 + a_hits × 12, 100)（S/A 标签命中数加权）
+  S_position = greatest(100 - (rank_in_platform - 1) × 8, 0)（资源位名次线性换算）
+  S_recency  = greatest(100 - 10 × dateDiff('day', crawl_date, today()), 0)（10 天衰减归零）
+全部在 ClickHouse SQL 内计算，与小说 GHI 模式对仗。
 """
 from typing import Optional
 
@@ -14,6 +20,57 @@ from services.drama_scraper_service import (
 )
 
 router = APIRouter(prefix="/api/dramas", tags=["dramas"])
+
+
+# ─────────────────────────────────────────────────────────────
+# DHI 标签清单（基于真实数据 + 业务直觉，与小说 _S_TAGS / _A_TAGS 互不影响）
+# 全部小写存储，匹配时 SQL 用 lower(x) IN (...) 做大小写不敏感比对
+# ─────────────────────────────────────────────────────────────
+_S_TAGS_DRAMA = {
+    "werewolf", "revenge", "rebirth", "reincarnation", "reborn",
+    "karma payback", "hidden identity", "secret identity", "comeback", "mafia",
+}
+_A_TAGS_DRAMA = {
+    "ceo", "billionaire", "modern romance", "contract marriage", "sweet",
+    "underdog rise", "strong female lead", "urban fantasy", "one night stand", "family",
+}
+
+
+def _tag_array_literal(tags: set[str]) -> str:
+    """把 Python set 转成 ClickHouse Array(String) 字面量，如 ['ceo','billionaire']"""
+    return "[" + ",".join(f"'{t}'" for t in sorted(tags)) + "]"
+
+
+_S_TAGS_SQL = _tag_array_literal(_S_TAGS_DRAMA)
+_A_TAGS_SQL = _tag_array_literal(_A_TAGS_DRAMA)
+
+
+# ─────────────────────────────────────────────────────────────
+# DHI SQL 模板（内层算分项 → 外层加权）
+# 使用嵌套 format：第一次填入 S/A 标签字面量，运行时填入 where_clause / limit / offset
+# ─────────────────────────────────────────────────────────────
+_DHI_SQL_TEMPLATE = """
+SELECT
+    id, title, summary, cover_url, tags, episodes, rank_in_platform,
+    heat_score, platform, lang, rank_type, crawl_date, source_url, created_at,
+    round(s_tag, 2)      AS s_tag,
+    round(s_position, 2) AS s_position,
+    round(s_recency, 2)  AS s_recency,
+    round((s_tag * 0.45) + (s_position * 0.35) + (s_recency * 0.20), 2) AS dhi
+FROM (
+    SELECT
+        id, title, summary, cover_url, tags, episodes, rank_in_platform,
+        heat_score, platform, lang, rank_type, crawl_date, source_url, created_at,
+        least(50.0
+              + arrayCount(x -> lower(x) IN {s_tags}, tags) * 25.0
+              + arrayCount(x -> lower(x) IN {a_tags}, tags) * 12.0,
+              100.0) AS s_tag,
+        greatest(100.0 - (toFloat64(rank_in_platform) - 1.0) * 8.0, 0.0) AS s_position,
+        greatest(100.0 - 10.0 * toFloat64(dateDiff('day', crawl_date, today())), 0.0) AS s_recency
+    FROM dramas
+    {{where_clause}}
+) AS raw
+""".format(s_tags=_S_TAGS_SQL, a_tags=_A_TAGS_SQL)
 
 
 def _build_where(
@@ -64,6 +121,10 @@ def _row_to_drama(row: dict) -> DramaOut:
         crawl_date=row.get("crawl_date"),
         source_url=row.get("source_url") or "",
         created_at=row.get("created_at"),
+        s_tag=float(row.get("s_tag") or 0),
+        s_position=float(row.get("s_position") or 0),
+        s_recency=float(row.get("s_recency") or 0),
+        dhi=float(row.get("dhi") or 0),
     )
 
 
@@ -78,15 +139,10 @@ def list_dramas(
 ):
     where_clause, params = _build_where(platform, title, date_range, rank_type)
     offset = (page - 1) * page_size
-    sql = f"""
-    SELECT
-        id, title, summary, cover_url, tags, episodes, rank_in_platform,
-        heat_score, platform, lang, rank_type, crawl_date, source_url, created_at
-    FROM dramas
-    {where_clause}
-    ORDER BY crawl_date DESC, heat_score DESC, created_at DESC
-    LIMIT {page_size} OFFSET {offset}
-    """
+
+    sql = _DHI_SQL_TEMPLATE.format(where_clause=where_clause)
+    sql = f"{sql}\n    ORDER BY dhi DESC\n    LIMIT {page_size} OFFSET {offset}"
+
     count_sql = f"SELECT count() FROM dramas {where_clause}"
 
     client = get_client()
@@ -132,15 +188,10 @@ def get_tags():
 
 @router.get("/{drama_id}", response_model=DramaOut)
 def get_drama(drama_id: str):
+    """单条详情：复用 DHI 模板，确保前端 DramaModal 拿到分项分。"""
     client = get_client()
-    sql = """
-    SELECT
-        id, title, summary, cover_url, tags, episodes, rank_in_platform,
-        heat_score, platform, lang, rank_type, crawl_date, source_url, created_at
-    FROM dramas
-    WHERE toString(id) = {drama_id:String}
-    LIMIT 1
-    """
+    where_clause = "WHERE toString(id) = {drama_id:String}"
+    sql = _DHI_SQL_TEMPLATE.format(where_clause=where_clause) + "\n    LIMIT 1"
     try:
         result = client.query(sql, parameters={"drama_id": drama_id})
     except Exception as exc:

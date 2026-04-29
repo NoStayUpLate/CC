@@ -25,7 +25,7 @@ const SECTION_TAGS = new Set([
 function SkeletonRows() {
   return Array.from({ length: 8 }).map((_, idx) => (
     <tr key={idx} className="border-b border-[#ebeef5]">
-      {Array.from({ length: 9 }).map((__, cellIdx) => (
+      {Array.from({ length: 8 }).map((__, cellIdx) => (
         <td key={cellIdx} className="px-3 py-2">
           <div className="h-4 w-full animate-pulse rounded bg-slate-100" />
         </td>
@@ -68,16 +68,15 @@ export default function DramaTable({ dramas, loading, onTitleClick }) {
   return (
     <div className="overflow-hidden rounded-sm border border-[#ebeef5] bg-white">
       <div className="overflow-x-auto">
-        <table className="min-w-[1120px] w-full table-fixed text-left text-xs text-black">
+        <table className="min-w-[940px] w-full table-fixed text-left text-xs text-black">
           <thead className="bg-[#f2f3f5] text-black shadow-[0_1px_0_#ebeef5]">
             <tr className="h-10">
               <th className="w-[320px] px-3 font-semibold">短剧名称</th>
               <th className="w-[110px] px-3 font-semibold">平台</th>
               <th className="w-[110px] px-3 font-semibold">栏目</th>
               <th className="w-[100px] px-3 text-right font-semibold">资源位位置</th>
-              <th className="w-[90px] px-3 text-right font-semibold">热度</th>
+              <th className="w-[90px] px-3 text-right font-semibold">DHI</th>
               <th className="w-[80px] px-3 text-right font-semibold">集数</th>
-              <th className="w-[180px] px-3 font-semibold">标签</th>
               <th className="w-[110px] px-3 font-semibold">抓取日期</th>
               <th className="w-[90px] px-3 text-center font-semibold">操作</th>
             </tr>
@@ -121,11 +120,13 @@ export default function DramaTable({ dramas, loading, onTitleClick }) {
                   <td className="px-3 text-black">{PLATFORM_LABEL[drama.platform] || drama.platform}</td>
                   <td className="px-3 text-black">{drama.rank_type || "未分类"}</td>
                   <td className="px-3 text-right tabular-nums text-black">#{drama.rank_in_platform || "-"}</td>
-                  <td className="px-3 text-right font-semibold tabular-nums text-brand">
-                    {(drama.heat_score || 0).toFixed(1)}
+                  <td
+                    className="px-3 text-right font-semibold tabular-nums text-brand"
+                    title={`题材 ${(drama.s_tag || 0).toFixed(1)} · 资源位 ${(drama.s_position || 0).toFixed(1)} · 新鲜度 ${(drama.s_recency || 0).toFixed(1)}`}
+                  >
+                    {(drama.dhi || 0).toFixed(1)}
                   </td>
                   <td className="px-3 text-right tabular-nums text-black">{drama.episodes ?? "-"}</td>
-                  <td className="px-3 text-black">-</td>
                   <td className="px-3 text-black">{drama.crawl_date || "-"}</td>
                   <td className="px-3 text-center">
                     {drama.source_url ? (

@@ -103,8 +103,8 @@ function aggregate(rows) {
   if (!rows || rows.length === 0) {
     return {
       total: 0,
-      avgHeat: 0,
-      maxHeat: 0,
+      avgDhi: 0,
+      maxDhi: 0,
       byPlatform: [],
       byRankType: [],
       topTags: [],
@@ -117,11 +117,11 @@ function aggregate(rows) {
   let sum = 0;
   let max = 0;
   rows.forEach((r) => {
-    const h = r.heat_score || 0;
+    const h = r.dhi || 0;
     sum += h;
     if (h > max) max = h;
   });
-  const avgHeat = sum / rows.length;
+  const avgDhi = sum / rows.length;
 
   // 平台分布
   const platformMap = new Map();
@@ -130,7 +130,7 @@ function aggregate(rows) {
     if (!platformMap.has(p)) platformMap.set(p, { platform: p, count: 0, sum: 0 });
     const o = platformMap.get(p);
     o.count += 1;
-    o.sum += r.heat_score || 0;
+    o.sum += r.dhi || 0;
   });
   const byPlatform = Array.from(platformMap.values())
     .map((o) => ({ platform: o.platform, count: o.count, avg_heat: o.count ? o.sum / o.count : 0 }))
@@ -156,7 +156,7 @@ function aggregate(rows) {
       if (!tagMap.has(tag)) tagMap.set(tag, { tag, count: 0, sum: 0 });
       const o = tagMap.get(tag);
       o.count += 1;
-      o.sum += r.heat_score || 0;
+      o.sum += r.dhi || 0;
     });
   });
   const topTags = Array.from(tagMap.values())
@@ -173,7 +173,7 @@ function aggregate(rows) {
     }
     const o = heatmapMap.get(k);
     o.count += 1;
-    o.sum += r.heat_score || 0;
+    o.sum += r.dhi || 0;
   });
   const heatmap = Array.from(heatmapMap.values()).map((o) => ({
     platform: o.platform,
@@ -184,11 +184,11 @@ function aggregate(rows) {
 
   // TOP 榜
   const top = [...rows]
-    .filter((r) => (r.heat_score || 0) > 0)
+    .filter((r) => (r.dhi || 0) > 0)
     .sort((a, b) => (b.heat_score || 0) - (a.heat_score || 0) || (a.rank_in_platform || 0) - (b.rank_in_platform || 0))
     .slice(0, 20);
 
-  return { total: rows.length, avgHeat, maxHeat: max, byPlatform, byRankType, topTags, heatmap, top };
+  return { total: rows.length, avgDhi, maxDhi: max, byPlatform, byRankType, topTags, heatmap, top };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -302,13 +302,13 @@ function OverviewTab({ stats }) {
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi label="匹配剧数" value={stats.total} suffix="部" tone="primary" />
-        <Kpi label="平均热度" value={stats.avgHeat.toFixed(1)} />
-        <Kpi label="最高热度" value={stats.maxHeat.toFixed(1)} />
+        <Kpi label="平均 DHI" value={stats.avgDhi.toFixed(1)} />
+        <Kpi label="最高 DHI" value={stats.maxDhi.toFixed(1)} />
         <Kpi label="覆盖平台" value={stats.byPlatform.length} suffix="个" />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <ChartBlock title="平台剧数分布" hint="柱长 = 当前筛选下该平台的剧数；颜色按平台区分。">
+        <ChartBlock title="平台剧数分布" hint="柱长 = 当前筛选下该平台的剧数；颜色按平台区分。Tooltip 中的「平均 DHI」可对比哪个平台整体潜力更高。">
           {platformData.length === 0 ? (
             <ChartEmpty />
           ) : (
@@ -333,7 +333,7 @@ function OverviewTab({ stats }) {
                       titleKey="label"
                       rows={[
                         { key: "count", label: "剧数", suffix: " 部" },
-                        { key: "avg_heat", label: "平均热度", format: (v) => v.toFixed(1) },
+                        { key: "avg_heat", label: "平均 DHI", format: (v) => v.toFixed(1) },
                       ]}
                     />
                   }
@@ -408,7 +408,7 @@ function TrendTab({ stats }) {
     <div className="space-y-4">
       <ChartBlock
         title="标签热度散点（选品罗盘）"
-        hint="X 轴 = 该标签当前剧数（市场供给），Y 轴 = 该标签平均热度（市场反馈）。中位虚线把图分成四个象限：左上=蓝海机会，右上=热门赛道，右下=红海拥挤，左下=冷门。气泡颜色越深表示热度越高。"
+        hint="X 轴 = 该标签当前剧数（市场供给），Y 轴 = 该标签平均 DHI（市场反馈）。中位虚线把图分成四个象限：左上=蓝海机会，右上=热门赛道，右下=红海拥挤，左下=冷门。气泡颜色越深表示 DHI 越高。"
       >
         {stats.topTags.length === 0 ? (
           <ChartEmpty />
@@ -419,7 +419,7 @@ function TrendTab({ stats }) {
 
       <ChartBlock
         title="平台 × 栏位 热力图"
-        hint="单元格颜色越深表示该平台 × 栏位组合的平均热度越高，主数字=平均热度，下方 ×N 为剧数。"
+        hint="单元格颜色越深表示该平台 × 栏位组合的平均 DHI 越高，主数字=平均 DHI，下方 ×N 为剧数。"
       >
         {stats.heatmap.length === 0 ? (
           <ChartEmpty />
@@ -460,11 +460,11 @@ function TagScatter({ items }) {
           <YAxis
             type="number"
             dataKey="avg_heat"
-            name="平均热度"
+            name="平均 DHI"
             tick={{ fontSize: 11, fill: "#000" }}
             stroke="#cbd5e1"
             label={{
-              value: "市场反馈（平均热度 ↑）",
+              value: "市场反馈（平均 DHI ↑）",
               angle: -90,
               position: "insideLeft",
               fill: "#000",
@@ -480,7 +480,7 @@ function TagScatter({ items }) {
                 titleKey="tag"
                 rows={[
                   { key: "count", label: "剧数", suffix: " 部" },
-                  { key: "avg_heat", label: "平均热度", format: (v) => v.toFixed(1) },
+                  { key: "avg_heat", label: "平均 DHI", format: (v) => v.toFixed(1) },
                 ]}
               />
             }
@@ -567,7 +567,7 @@ function PlatformRankHeatmap({ items }) {
                     <div
                       className="flex h-10 flex-col items-center justify-center rounded text-[11px]"
                       style={{ background: heatColor(cell.avg_heat) }}
-                      title={`${platformLabel(p)} · ${rt}：${cell.count} 部 / 平均热度 ${cell.avg_heat.toFixed(1)}`}
+                      title={`${platformLabel(p)} · ${rt}：${cell.count} 部 / 平均 DHI ${cell.avg_heat.toFixed(1)}`}
                     >
                       <div className="font-semibold tabular-nums">{cell.avg_heat.toFixed(1)}</div>
                       <div className="text-[10px] opacity-80">×{cell.count}</div>
@@ -580,11 +580,11 @@ function PlatformRankHeatmap({ items }) {
         </tbody>
       </table>
       <div className="mt-2 flex items-center gap-2 text-[10px] text-black">
-        <span>低热度</span>
+        <span>低 DHI</span>
         {[10, 30, 50, 70, 85, 95].map((s) => (
           <span key={s} className="inline-block h-3 w-6 rounded" style={{ background: heatColor(s) }} />
         ))}
-        <span>高热度</span>
+        <span>高 DHI</span>
       </div>
     </div>
   );

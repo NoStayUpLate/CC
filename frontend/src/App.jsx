@@ -379,8 +379,9 @@ function Dashboard({ user, onLogout }) {
                   onSearch={handleDramaSearch}
                 />
 
-                <div className="zw-card">
+                <div className="zw-card flex flex-wrap items-center justify-between gap-3">
                   <ResultCounter total={dramaTotal} loading={dramaLoading} error={dramaError} />
+                  <DhiInfoTooltip />
                 </div>
 
                 <DramaInsights
@@ -433,6 +434,36 @@ function GhiInfoTooltip() {
         </div>
         <p className="text-xs text-black leading-relaxed">
           指标均由 ClickHouse 预计算后返回，前端只做字段映射展示，避免口径偏差。
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/** DHI 算法悬浮提示（鼠标悬停展开，向左弹出） */
+function DhiInfoTooltip() {
+  return (
+    <div className="relative group">
+      <span className="text-xs text-black cursor-default select-none group-hover:text-brand transition-colors duration-200 flex items-center gap-1">
+        DHI 算法
+        <Info size={12} strokeWidth={1.5} />
+      </span>
+
+      <div className="absolute right-0 top-full mt-2 w-[520px] z-50
+                      invisible opacity-0 translate-y-1
+                      group-hover:visible group-hover:opacity-100 group-hover:translate-y-0
+                      transition-all duration-200
+                      bg-white border border-zw-border rounded-lg p-4 space-y-3 shadow-[0_12px_36px_rgba(15,23,42,0.12)]">
+        <div className="px-3 py-2 text-xs text-black border border-zw-border rounded bg-[#f7f8fa]">
+          DHI = S_tag × 0.45 + S_position × 0.35 + S_recency × 0.20
+        </div>
+        <ul className="text-xs text-black leading-relaxed space-y-1 ml-4 list-disc">
+          <li><strong>S_tag</strong>：题材匹配度，命中 S 级标签 +25 / A 级 +12，基线 50，cap 100</li>
+          <li><strong>S_position</strong>：资源位强度，按平台内名次线性换算（第 1 名 100，每后退 -8）</li>
+          <li><strong>S_recency</strong>：数据新鲜度，距今 1 天 -10，10 天前归零</li>
+        </ul>
+        <p className="text-xs text-black leading-relaxed">
+          全部在 ClickHouse SQL 内计算，与小说 GHI 模式对仗，前端只做展示。
         </p>
       </div>
     </div>

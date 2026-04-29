@@ -22,7 +22,7 @@ function buildSparkPoints(base = 0) {
 
 export default function DramaCard({ drama, onClick }) {
   const platformCls = PLATFORM_COLOR[drama.platform] || "text-black border-slate-300";
-  const sparkPoints = buildSparkPoints(drama.heat_score || 0);
+  const sparkPoints = buildSparkPoints(drama.dhi || 0);
 
   return (
     <div
@@ -93,7 +93,7 @@ export default function DramaCard({ drama, onClick }) {
 
       <div className="flex items-center justify-between gap-2 border-t border-zw-border pt-3">
         <div className="flex gap-4 text-xs text-black">
-          <span>热度 {(drama.heat_score || 0).toFixed(1)}</span>
+          <span>DHI {(drama.dhi || 0).toFixed(1)}</span>
           <span>集数 {drama.episodes ?? "-"}</span>
         </div>
         {drama.source_url && (
