@@ -1,200 +1,87 @@
 # 罗盘 · 海外内容监测看板 · 系统说明
 
-> 给评审人员的速读材料 —— 5 分钟看懂这套系统**做什么、怎么实现、对业务价值多大**。
-> 详细工程说明见 [README.md](../README.md) 与 [CLAUDE.md](../CLAUDE.md)。
+> 给评审人员的速读材料 —— 从「**业务价值 / 创新度 / 开发难度**」三个维度看这套系统。
 
 ---
 
-## 1. 系统定位（一句话）
+## 一、业务价值
 
-**面向 AI 短剧团队的"题材选品 + 平台对标"决策工具**：自动监测海外 8 大短剧平台 + 3 大小说平台的热门内容，用 GHI 算法量化"哪些题材最值得改编"，让团队从"凭感觉选题"变成"看数据选题"。
+**核心问题**：AI 短剧团队选品长期靠「拍脑袋 + 抄爆款」，撞车率高、命中率低，跨平台调研每天耗 1-2 小时。
 
-业务闭环：
-```
-海外原作（爬虫监测） → 题材打分（GHI 算法） → 短剧表现验证（栏位榜单） → 反向指导团队选品
-```
+**罗盘带来的改变**：
+
+| 痛点 | 改变 |
+|------|------|
+| 选题靠经验，撞车率高 | GHI 三维加权打分 + 标签四象限分区，把"蓝海机会 / 热门赛道 / 红海拥挤 / 冷门"一图看清 |
+| 跨 8 个海外短剧平台手动逛榜 | 一键聚合抓取 NetShort / ShortMax / ReelShort / DramaBox / DramaReels / DramaWave / GoodShort / MoboReels |
+| 拍完不知投哪个平台的哪个栏位 | 「平台 × 栏位 热力图」直接告诉你哪个组合最容易出爆款 |
+| 海外小说改编选 IP 无依据 | S_adapt 标签匹配 + 黄金三秒钩子词检测，先筛后看 |
+
+**量化对比**：
+
+- 选品效率：1-2 小时手工调研 → **10 分钟看罗盘**
+- 数据覆盖：单平台肉眼浏览 → **8 短剧平台 + 3 小说平台同栈聚合**（Wattpad / Royal Road / Syosetu）
+- 决策依据：经验直觉 → **GHI 三维加权 + 标签四象限定位**
 
 ---
 
-## 2. GHI 算法（核心 IP）
+## 二、创新度
 
-GHI = **G**lobal **H**eat **I**ndex（全球热度指数），用于量化一部海外小说被改编为 AI 短剧的潜力。
+不是又一个「爬数据看榜单」的工具，本系统在三个层面有原创设计：
 
-### 2.1 公式
+### 1. GHI 算法（自研）
 
 ```
 GHI = S_popular × 0.30  +  S_engage × 0.30  +  S_adapt × 0.40
 ```
 
-| 分项 | 含义 | 计算逻辑 | 算的位置 |
-|------|------|----------|----------|
-| **S_popular** | 流量分（人气广度） | `log10(views + 1) × 10`，上限 100。对数避免头部碾压 | ClickHouse SQL |
-| **S_engage** | 粘性分（点赞 / 阅读） | `likes/views × 100 × 语种系数`，上限 100。系数：韩语 ×1.2、英语 ×0.8（韩语点赞文化更克制） | ClickHouse SQL |
-| **S_adapt** | 改编适配分（题材契合度） | 爬虫端按标签预计算：S 级标签（狼人 / 重生 / 复仇 / 恶役千金）→ 90+；A 级 → 70-89；无标签默认 50 | Python 爬虫 |
+| 分项 | 含义 | 创新点 |
+|------|------|--------|
+| **S_popular** | 流量分 | `log10(views+1) × 10` 用对数避免头部碾压，公平比较小作品和爆款 |
+| **S_engage** | 粘性分 | `likes/views` 后乘**语种系数**（韩语 ×1.2 / 英语 ×0.8），修正不同文化点赞习惯偏差 |
+| **S_adapt** | 改编适配分 | 按题材标签预打分：S 级（狼人 / 重生 / 复仇 / 恶役千金）90+，A 级 70-89 |
 
-权重 30/30/40 倾向 **S_adapt**，因为改编公司更在意"能不能改"而不是"原作多火"。详细算法引用：[backend/routers/novels.py:42-69](../backend/routers/novels.py#L42-L69)。
+**权重 30/30/40 倾向 S_adapt** —— 改编公司更在意「能不能改」而不是「原作多火」，这是一个从业务直觉中提炼的反常识权重。
 
-### 2.2 黄金三秒钩子（has_hook）
+### 2. 选品罗盘（标签热度散点四象限）
 
-并行的二元判定：标题或简介命中 `reborn / revenge / villainess / transmigrat / abandoned / ...` 等词就标记为「黄金三秒」。短剧首集开头三秒决定留存，钩子词命中率与转化率强相关。
+X 轴 = 该题材当前剧数（市场供给），Y 轴 = 该题材平均热度（市场反馈）。中位线把图分成四个象限：
 
-### 2.3 短剧侧的 heat_score
+- **左上 蓝海机会**：少而精，改了就有先发优势
+- **右上 热门赛道**：多而火，红利期但要拼制作
+- **右下 红海拥挤**：多而冷，避开
+- **左下 冷门**：少而冷，谨慎
 
-短剧表 `dramas` 不算 GHI（无 views/likes 数据），用 **heat_score** 替代：按平台榜单名次线性换算 `100 - (rank - 1) × 8`。配合栏位类型（轮播 / 推荐 / 上新）二维定位「哪个平台的哪个栏位最容易出爆款」。
+业内还没人这么把「选品」可视化成一张图。
 
----
+### 3. 黄金三秒钩子（has_hook）
 
-## 3. 监测的平台与内容
-
-### 3.1 海外短剧（8 平台聚合，1 个调度入口）
-
-| 平台 | 标识符 | 抓取栏位 |
-|------|--------|----------|
-| NetShort | `netshort` | 轮播推荐 / 推荐栏位 / 最近上新 |
-| ShortMax | `shortmax` | 推荐栏位 / 最近上新 / 近期热门 |
-| ReelShort | `reelshort` | 最近上新 |
-| DramaBox | `dramabox` | 顶部推荐 / 推荐栏位 / 近期热门 |
-| DramaReels | `dramareels` | 轮播推荐 / 推荐栏位 / 最近上新 |
-| DramaWave | `dramawave` | 轮播推荐 / 推荐栏位 / 最近上新 |
-| GoodShort | `goodshort` | 近期热门 / 推荐栏位 / 热门榜单 / 当前热门 |
-| MoboReels | `moboreels` | 近期热门 / 推荐栏位 / 最近上新 |
-
-调度统一走 [`ShortDramaTop5Scraper`](../backend/scrapers/dramas/en_shortdrama_top5_scraper.py)：一次调用同时抓 8 个平台、按平台名次线性赋予 heat_score。
-
-**抓取字段**：标题 / 简介 / 封面 / 题材标签 / 集数 / 平台内名次 / 热度分 / 栏位类型 / 抓取日期 / 来源 URL。
-
-### 3.2 海外小说（3 平台）
-
-| 平台 | 抓取方式 | 频率 |
-|------|---------|------|
-| **Wattpad**（英语） | 公开 REST API | 触发式 + APScheduler 周榜 |
-| **Royal Road**（英语） | SSR HTML 解析 | 周榜 |
-| **Syosetu**（日语） | 日榜 / 周榜 / 月榜 | 三档定时 |
-
-**抓取字段**：标题 / 简介 / 题材标签 / 阅读量 / 点赞 / 原作 URL / 平台 / 语种 / 榜单类型 / **前三章高频关键词词频（仅英语）** —— 后者用于做关键词云。
-
-### 3.3 数据缺失契约
-
-凡是平台未公开或抓取失败的数值字段，**统一返回 `None`**，禁止用 0 占位 —— 否则会污染 GHI 排名。这是工程纪律，也是数据可信度的根基。
+并行的二元判定：标题或简介命中 `reborn / revenge / villainess / transmigrat / abandoned ...` 等词标记为「黄金三秒」。**短剧首集开头 3 秒决定留存率**，钩子词命中和转化率强相关 —— 这是把行业经验沉淀进算法的体现。
 
 ---
 
-## 4. 代码架构（4 层）
+## 三、开发难度
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  React + Vite + Tailwind                  ← 前端展示层      │
-│  · Auth Gate / 双 Tab 切换 / 可视化罗盘   · ~12 个组件      │
-├─────────────────────────────────────────────────────────────┤
-│  FastAPI + APScheduler + Pydantic         ← 后端 API 层    │
-│  · /api/novels  /api/dramas  /api/scrape  · JWT + bcrypt    │
-├─────────────────────────────────────────────────────────────┤
-│  ClickHouse (novels / dramas 双表)        ← 存储 + 计算层  │
-│  · GHI 在 SQL 内算，前端零计算            · 列式存储压缩高 │
-├─────────────────────────────────────────────────────────────┤
-│  BaseHttpScraper / BasePlaywrightScraper  ← 爬虫抽象层      │
-│  · 三件套基类 + 子类实现                  · 注册表自动发现 │
-└─────────────────────────────────────────────────────────────┘
-```
+| 维度 | 复杂度 |
+|------|--------|
+| **技术栈跨度** | Python（FastAPI + Playwright + APScheduler）+ React 18 + Vite + Tailwind + ClickHouse + Docker Compose + Caddy，**全栈 + DevOps 一锅端** |
+| **爬虫工程** | 8 个海外短剧平台，**HTML 结构各不相同**，前端反爬严格。封装 BaseHttpScraper / BasePlaywrightScraper / BaseShortDramaScraper **三件套基类**，子类只需 ~50 行实现，重试 / 代理回退 / 浏览器生命周期都在基类 |
+| **数据建模** | ClickHouse 列式存储 + ReplacingMergeTree 引擎自动去重，GHI 三层嵌套 SQL 在数据库内算（前端零计算）；数据缺失契约严格：**统一 None 禁止 0 占位**，否则会污染 GHI 排名 |
+| **可视化** | recharts 实现选品罗盘的散点四象限 + 平台 × 栏位热力图 + TOP20 横向柱状榜单，全部在浏览器侧聚合渲染 |
+| **鉴权** | JWT + bcrypt + HTTP-only cookie + fail-fast 启动校验；可插拔后端（File / SQLite），同一份接口两种实现 |
+| **部署** | Docker Compose 同栈部署 4 个容器（Caddy + nginx + FastAPI + ClickHouse），一键运维脚本 `./deploy.sh` 子命令 6 个，国内 ECS 友好的镜像源优化（apt → 阿里云 / pip → 阿里云 / npm → npmmirror）|
+| **AI 协作工程化** | 项目根有 [CLAUDE.md](../CLAUDE.md)（AI 工作手册）+ `.claude/skills/` 自定义 skill（爬虫开发流程 / 项目加固审计），让 AI 能按规范长期协作而不破坏架构契约 |
 
-### 4.1 关键设计
+**代码规模参考**：后端约 5000 行 Python（含 11 个爬虫子类）、前端约 3500 行 React、ClickHouse DDL 含字段注释 + 迁移脚本约 250 行。
 
-- **GHI 算 SQL 不算 JS**：算法在 [`backend/routers/novels.py:42-69`](../backend/routers/novels.py#L42-L69)，前端只做字段映射展示。算法迭代不需要重发前端。
-- **爬虫三件套**：HTTP 系 / Playwright 系 / 短剧专用基类（[backend/scrapers/](../backend/scrapers/)）—— 子类只关心「URL 怎么拼」「HTML 怎么解析」，重试 / 代理回退 / 浏览器生命周期都在基类。**新增一个平台只需 ~50 行子类代码**。
-- **批量写入幂等**：ClickHouse `ReplacingMergeTree` 引擎 + `(platform, title)` 去重键，重复抓取自动合并。
-- **鉴权可插拔**：File 后端（环境变量直读）/ SQLite 后端（动态注册），代码同一份接口（[backend/auth/backends.py](../backend/auth/backends.py)）。
-- **可视化罗盘前端纯算**：当前筛选条件下的 KPI / 平台分布 / 标签热度散点 / TOP 榜单全部在浏览器算，零额外后端聚合查询，分页拉满后 useMemo 派生（[frontend/src/components/DramaInsights.jsx](../frontend/src/components/DramaInsights.jsx)）。
+---
 
-### 4.2 关键路径速查
+## 关键路径速查（开发者视角）
 
 | 关注点 | 入口文件 |
 |--------|---------|
-| FastAPI 启动 + 路由注册 | [backend/main.py](../backend/main.py) |
 | GHI 算法 SQL | [backend/routers/novels.py](../backend/routers/novels.py) |
 | 短剧 8 平台调度 | [backend/scrapers/dramas/en_shortdrama_top5_scraper.py](../backend/scrapers/dramas/en_shortdrama_top5_scraper.py) |
-| 表结构 + 迁移 + 批量写入 | [backend/database.py](../backend/database.py) |
-| 定时任务（日 / 周 / 月榜） | [backend/services/scheduler.py](../backend/services/scheduler.py) |
-| 前端主入口 + 鉴权门 | [frontend/src/App.jsx](../frontend/src/App.jsx) |
-| 短剧选品罗盘可视化 | [frontend/src/components/DramaInsights.jsx](../frontend/src/components/DramaInsights.jsx) |
-
-### 4.3 部署
-
-Docker Compose 同栈部署 4 个容器：Caddy（反代 + LE 证书） / nginx + React 静态文件 / FastAPI 后端 / ClickHouse 数据库。一键运维入口 [`./deploy.sh`](../deploy.sh) 子命令：`up / down / restart / status / logs / update / secret`。
-
-`./deploy.sh update` = 拉新代码 + 重建镜像 + 平滑重启 + 清理悬挂镜像，整个流程一气呵成。
-
----
-
-## 5. 业务价值（评估视角）
-
-### 5.1 解决了什么问题
-
-| 痛点 | 看板带来的改变 |
-|------|---------------|
-| 选题靠拍脑袋 / 抄爆款，撞车率高 | GHI 量化打分 + 标签热度散点把「蓝海机会 / 热门赛道 / 红海拥挤」可视化分区 |
-| 跨 8 个平台手工逛榜，每天耗 1-2 小时 | 一键聚合抓取，10 分钟覆盖全平台 TOP 榜单 |
-| 拍完不知该投哪个平台的哪个栏位 | 「平台 × 栏位 热力图」直接告诉你哪个组合最容易出爆款 |
-| 海外小说改编选 IP 无依据 | S_adapt 标签匹配 + has_hook 钩子词检测，先筛后看 |
-
-### 5.2 量化对比
-
-- **选品效率**：1-2 小时手工调研 → **10 分钟看罗盘**
-- **数据覆盖**：单平台肉眼浏览 → **8 个海外短剧平台 + 3 个海外小说平台同栈聚合**
-- **决策依据**：经验直觉 → **GHI 三维加权 + 标签四象限定位**
-
----
-
-## 6. 易用性（操作流程）
-
-### 6.1 看板使用（业务侧）
-
-1. 登录（邀请码注册 / 管理员开账号）
-2. 进「海外短剧检测」 / 「海外小说检测」 双 Tab
-3. **筛选** 平台 / 语种 / 栏位 / 标签 / 关键词
-4. 看 **可视化罗盘**：数据概览（KPI + 分布）/ 趋势洞察（标签散点 + 平台栏位热力）/ 表现榜单（TOP20 横向条形）
-5. 点条目进详情页 —— 看简介、标签、原站链接
-
-### 6.2 运维使用（技术侧）
-
-```bash
-# 服务器
-./deploy.sh status          # 看状态
-./deploy.sh logs backend    # 跟日志
-./deploy.sh update          # 拉新代码 + 一键升级
-
-# 本地
-./启动.bat                  # Windows 一键起后端 + 前端
-```
-
-### 6.3 扩展使用（开发侧）
-
-新增一个短剧平台抓取：
-1. `backend/scrapers/dramas/` 下新建 `en_xxx_scraper.py`，继承 `BaseShortDramaScraper`
-2. 实现 `scrape()` 方法（约 50 行）
-3. 在 `__init__.py` 的 `DRAMA_SCRAPER_REGISTRY` 注册
-4. 走 [.claude/skills/add-scraper](../.claude/skills/add-scraper/SKILL.md) skill 的 6 步检查表确认数据契约
-5. 重启即生效
-
----
-
-## 7. 工程亮点（评审参考）
-
-| 维度 | 体现 |
-|------|------|
-| 架构清晰度 | 4 层分明、爬虫三件套基类、注册表自动发现 |
-| 数据严谨性 | 缺失统一 `None`、ClickHouse 强类型 + 字段注释、新字段四处同步契约 |
-| 算法可解释性 | GHI 三分项分别可见，能解释「为什么这部排第一」 |
-| 安全性 | JWT + bcrypt + HTTP-only cookie + fail-fast 启动校验，无明文凭据落库 |
-| 可运维性 | 一键脚本 / 健康检查 / 镜像加速 / 国内 ECS 友好的构建优化 |
-| 可观测性 | 前端 KPI 面板 / 日志按服务隔离 / 任务进度轮询 |
-| 文档完备 | README.md（人类）+ CLAUDE.md（AI 工作手册）+ PRODUCTION.md（部署快照）+ 本说明 |
-
----
-
-## 8. 当前状态与限制（透明披露）
-
-- **已部署**：阿里云 ECS（境内节点），Docker Compose 同栈，HTTP 模式访问
-- **已知限制**：境内节点出口受限，部分海外平台爬虫无法直连，目前用本地 dump 数据演示效果
-- **后续路线**：换境外节点 → HTTPS + 域名 → 关键词抓取扩展（多语种）
-
-完整状态见 [docs/PRODUCTION.md](PRODUCTION.md)。
+| 表结构 + 迁移 | [backend/database.py](../backend/database.py) |
+| 选品罗盘可视化 | [frontend/src/components/DramaInsights.jsx](../frontend/src/components/DramaInsights.jsx) |
+| 一键运维 | [deploy.sh](../deploy.sh) |

@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronUp,
   Clapperboard,
+  FileText,
   Info,
   LayoutDashboard,
   LogOut,
@@ -17,6 +18,7 @@ import NovelModal from "./components/NovelModal";
 import DramaTable from "./components/DramaTable";
 import DramaModal from "./components/DramaModal";
 import DramaInsights from "./components/DramaInsights";
+import SystemOverviewModal from "./components/SystemOverviewModal";
 import ResultCounter from "./components/ResultCounter";
 import LoginPage from "./components/LoginPage";
 import { useAuth } from "./hooks/useAuth";
@@ -65,6 +67,7 @@ function Dashboard({ user, onLogout }) {
   const [displayTab, setDisplayTab] = useState("dramas");
   const [tabVisible, setTabVisible] = useState(true);
   const [siderOpen, setSiderOpen] = useState(false);
+  const [systemOverviewOpen, setSystemOverviewOpen] = useState(false);
 
   // 小说状态
   const [novelDraftFilters, setNovelDraftFilters] = useState(EMPTY_FILTERS);
@@ -253,6 +256,15 @@ function Dashboard({ user, onLogout }) {
                   {currentMeta.subtitle}
                 </div>
               </div>
+              <button
+                type="button"
+                onClick={() => setSystemOverviewOpen(true)}
+                className="inline-flex h-7 items-center gap-1 rounded border border-brand-light bg-brand-light px-2.5 text-[11px] font-medium text-brand transition-colors hover:bg-brand hover:text-white"
+                title="查看系统说明（业务价值 / 创新度 / 开发难度）"
+              >
+                <FileText size={12} strokeWidth={1.8} />
+                <span>系统说明</span>
+              </button>
             </div>
 
             <div className="flex items-center gap-4 text-xs text-black">
@@ -392,6 +404,10 @@ function Dashboard({ user, onLogout }) {
 
       <NovelModal novel={activeNovel} onClose={() => setActiveNovel(null)} />
       <DramaModal drama={activeDrama} onClose={() => setActiveDrama(null)} />
+      <SystemOverviewModal
+        open={systemOverviewOpen}
+        onClose={() => setSystemOverviewOpen(false)}
+      />
     </div>
   );
 }
