@@ -35,11 +35,12 @@ GHI / S_popular / S_engage / S_adapt / has_hook **全部在 ClickHouse 查询层
 | [frontend/src/App.jsx](frontend/src/App.jsx) | 顶层 Auth Gate + Dashboard（React 18 + Vite + Tailwind） |
 | [frontend/src/api/client.js](frontend/src/api/client.js) | 前端唯一 HTTP 客户端（`credentials: 'include'` + 401 拦截） |
 | [frontend/src/hooks/useAuth.js](frontend/src/hooks/useAuth.js) / [components/LoginPage.jsx](frontend/src/components/LoginPage.jsx) | 全局鉴权 hook + 登录页 |
-| [docker-compose.yml](docker-compose.yml) / [docker-compose.dev.yml](docker-compose.dev.yml) / [Caddyfile](Caddyfile) | 生产 compose（Caddy→nginx→backend）/ 本地 dev override / Caddy HTTPS 配置 |
-| [.env.production.example](.env.production.example) | 上云所需环境变量样例（JWT_SECRET / AUTH_USERS / DOMAIN 等） |
+| [docker-compose.yml](docker-compose.yml) / [docker-compose.dev.yml](docker-compose.dev.yml) / [Caddyfile](Caddyfile) | 生产 compose（Caddy→nginx→backend→**clickhouse 同栈**）/ 本地 dev override / Caddy HTTPS 配置 |
+| [.env.production.example](.env.production.example) | 上云所需环境变量样例（JWT_SECRET / AUTH_USERS / DOMAIN / CLICKHOUSE_PASSWORD 等） |
+| [deploy.sh](deploy.sh) | 服务器一键运维脚本（up / down / restart / logs / status / update / secret） |
 | **`zhangwan-ui/`** | ⚠️ **独立 Vue 3 设计系统资源，与本项目无关，禁止改动** |
-| [run_wattpad_keywords.py](run_wattpad_keywords.py) | 一次性脚本（关键词回填），不是定时任务 |
-| [启动.bat](启动.bat) | Windows 一键启动后端 + 前端 |
+| [run_wattpad_keywords.py](run_wattpad_keywords.py) | 一次性脚本（关键词回填），不是定时任务；连接信息走环境变量，缺失会 fail-fast |
+| [启动.bat](启动.bat) | Windows 一键启动后端 + 前端（轮询端口 + 自动 npm install） |
 
 ---
 
@@ -87,6 +88,9 @@ open http://localhost:8000/docs
 15. **SQLite 用户库 `auth_users.db` 不进仓库**（`.gitignore` 已排除），生产容器挂在 `/data` 持久卷。
 16. **自助注册仅在 `AUTH_BACKEND=sqlite` 且 `REGISTRATION_CODE` 非空时启用**。`POST /api/auth/register` 同时校验：邀请码精确匹配、用户名 `^[A-Za-z0-9_]{3,32}$`、密码 ≥6 位、用户名未被占用；成功后直接种 cookie 自动登录。前端通过 `GET /api/auth/config` 决定是否展示注册入口。
 17. **`REGISTRATION_CODE` 视同生产秘密**，禁止写进文档 / 仓库 / 默认 example；改邀请码立即作废历史邀请。
+18. **后端 Dockerfile 镜像源**（apt → mirrors.aliyun.com / pip → 阿里云 / Playwright → npmmirror）是**国内 ECS 构建必需**，删掉等于让构建从 10 分钟变 7 小时。海外服务器构建可临时还原，但 PR 不要合回主分支。
+19. **Skill 索引**只列入口（详细流程在 SKILL.md 内）；新增项目级 skill 在 [.claude/skills/](.claude/skills/) 下建子目录，不要塞 `.claude/settings.local.json`（用户私有，已 gitignore）。
+20. **任何配置/凭据相关文件改动后**走完[`project-hardening` skill](.claude/skills/project-hardening/SKILL.md) 的 Step 1 secrets 扫描再 push，避免泄密。
 
 ---
 
@@ -125,6 +129,7 @@ open http://localhost:8000/docs
 ## 6. Skill 索引
 
 - **新增爬虫 / 接入新平台** → 必读 [.claude/skills/add-scraper/SKILL.md](.claude/skills/add-scraper/SKILL.md)
+- **架构审计 / 加固 / 防泄密**（**通用，可移植到任何项目**）→ [.claude/skills/project-hardening/SKILL.md](.claude/skills/project-hardening/SKILL.md)
 
 后续如需新增"前端组件规范 / SQL 查询规范 / GHI 调整"等 skill，在此追加一行指针即可。
 
