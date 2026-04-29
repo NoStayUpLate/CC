@@ -16,6 +16,7 @@ import NovelCard from "./components/NovelCard";
 import NovelModal from "./components/NovelModal";
 import DramaTable from "./components/DramaTable";
 import DramaModal from "./components/DramaModal";
+import DramaInsights from "./components/DramaInsights";
 import ResultCounter from "./components/ResultCounter";
 import LoginPage from "./components/LoginPage";
 import { useAuth } from "./hooks/useAuth";
@@ -369,6 +370,12 @@ function Dashboard({ user, onLogout }) {
                 <div className="zw-card">
                   <ResultCounter total={dramaTotal} loading={dramaLoading} error={dramaError} />
                 </div>
+
+                <DramaInsights
+                  filters={dramaFilters}
+                  queryVersion={dramaQueryVersion}
+                  onDramaClick={setActiveDrama}
+                />
 
                 <DramaTable
                   dramas={dramas}

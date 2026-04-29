@@ -145,3 +145,31 @@ export const fetchDramaTags = () => get("/dramas/meta/tags");
 export const fetchDrama = (dramaId) => get(`/dramas/${dramaId}`);
 export const triggerDramaScrape = (req) => post("/dramas/scrape", req);
 export const fetchDramaScrapeStatus = (taskId) => get(`/dramas/scrape/${taskId}`);
+
+/**
+ * 分页拉满当前筛选下的所有短剧行，用于纯前端聚合计算。
+ * 仅传后端已支持的过滤维度（platform / title / rank_type / date_range）；
+ * lang / tags 由调用方在拿到 items 后做客户端过滤。
+ */
+export async function fetchAllDramas(filters = {}) {
+  const PAGE_SIZE = 100;
+  const backendFilters = {
+    platform: filters.platform,
+    title: filters.title,
+    rank_type: filters.rank_type,
+    date_range: filters.date_range,
+  };
+  let page = 1;
+  const items = [];
+  let total = 0;
+  // 设个安全上限避免极端情况下死循环
+  while (page <= 50) {
+    const data = await fetchDramas({ ...backendFilters, page, page_size: PAGE_SIZE });
+    total = data.total || 0;
+    const batch = data.items || [];
+    items.push(...batch);
+    if (items.length >= total || batch.length === 0) break;
+    page += 1;
+  }
+  return { total, items };
+}
