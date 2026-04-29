@@ -1,0 +1,35 @@
+# Caddy 自动 Let's Encrypt 证书 + 反代 frontend nginx。
+# DOMAIN 与 ADMIN_EMAIL 由 compose 注入环境变量。
+#
+# 没有公网域名调试时，可临时把 {$DOMAIN} 换成 :80（明文 HTTP），
+# 但要把 .env.production 里的 COOKIE_SECURE 同步改 false，
+# 否则浏览器拒绝 HTTP 下的 Secure cookie。
+
+{
+    email {$ADMIN_EMAIL}
+}
+
+{$DOMAIN} {
+    encode zstd gzip
+
+    reverse_proxy frontend:80 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    # 安全头（HSTS 在 Caddy 自动处理）
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options        "SAMEORIGIN"
+        Referrer-Policy        "strict-origin-when-cross-origin"
+        # 移除暴露后端栈信息
+        -Server
+    }
+
+    log {
+        output stdout
+        format console
+    }
+}

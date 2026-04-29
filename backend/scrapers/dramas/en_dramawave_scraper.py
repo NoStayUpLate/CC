@@ -1,0 +1,27 @@
+"""DramaWave 短剧网页爬虫。"""
+from __future__ import annotations
+
+from bs4 import BeautifulSoup
+
+from .shortdrama_base import BaseShortDramaScraper
+
+
+class DramaWaveScraper(BaseShortDramaScraper):
+    platform = "dramawave"
+    lang = "en"
+    list_url = "https://mydramawave.com/"
+    section_limit = 5
+    section_order = ["轮播推荐", "推荐栏位", "最近上新"]
+
+    async def scrape(self, genre: str = "", limit: int = 5) -> list[dict]:
+        html = await self._get_html(self.list_url, extra_headers={"Accept": "text/html"})
+        soup = BeautifulSoup(html, "html.parser")
+        items = self._parse_section_by_headings(
+            soup=soup,
+            source_url=self.list_url,
+            limit=limit,
+            link_keyword="/episode/",
+            base_url="https://mydramawave.com",
+        )
+        items = await self._enrich_items_from_detail_pages(items)
+        return items[:limit]

@@ -1,0 +1,47 @@
+# ── 环境变量 / 密钥（绝对不能提交）──
+.env
+.env.local
+.env.production
+.env.*.local
+backend/.env
+
+# ── SQLite 用户库 ──
+auth_users.db
+auth_users.db-*
+backend/auth_users.db
+backend/auth_users.db-*
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ── Node ──
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# ── IDE / 系统 ──
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ── Claude Code 本地配置（用户私有，不公开）──
+.claude/settings.local.json
+.claude/local/
+
+# ── pip 误命令产生的垃圾文件（如 pip install =0.27）──
+backend/=*
+
+# ── 日志 ──
+*.log
+
+# ── Caddy 数据（容器内挂载，不应进仓库）──
+caddy_data/
+caddy_config/

@@ -1,0 +1,151 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB",
+      "Microsoft YaHei", Arial, sans-serif;
+    background: #e5e7eb;
+  }
+
+  body {
+    margin: 0;
+    background: #e5e7eb !important;
+    color: #000000;
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  #root {
+    min-height: 100vh;
+    background: #e5e7eb !important;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+}
+
+@layer components {
+  .zw-card {
+    border-radius: 2px;
+    border: 1px solid #ebeef5;
+    background: #ffffff;
+    padding: 12px;
+    box-shadow: none;
+  }
+
+  .zw-card-hover {
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+
+  .zw-card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+  }
+
+  .zw-field {
+    height: 28px;
+    border-radius: 2px;
+    border: 1px solid #dcdfe6;
+    background: #ffffff;
+    padding: 0 10px;
+    color: #000000;
+    font-weight: 500;
+    font-size: 12px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+
+  .zw-field::placeholder {
+    color: #000000;
+  }
+
+  .zw-field:focus {
+    border-color: #00bf8a;
+    box-shadow: 0 0 0 1px #e6f9f3;
+  }
+
+  .zw-chip {
+    border-radius: 4px;
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    padding: 4px 10px;
+    color: #000000;
+    font-size: 12px;
+    font-weight: 500;
+    transition: border-color 0.2s, color 0.2s, background-color 0.2s;
+  }
+
+  .zw-chip:hover {
+    border-color: #00bf8a;
+    color: #00bf8a;
+  }
+
+  .zw-chip-active {
+    border-color: #00bf8a;
+    background: #e6f9f3;
+    color: #00bf8a;
+  }
+
+  .zw-primary-btn {
+    height: 28px;
+    border-radius: 2px;
+    background: #00bf8a;
+    padding: 0 16px;
+    color: #000000;
+    font-size: 12px;
+    line-height: 28px;
+    transition: background-color 0.2s;
+  }
+
+  .zw-primary-btn:hover {
+    background: #00a877;
+  }
+
+  .zw-default-btn {
+    height: 28px;
+    border-radius: 2px;
+    border: 1px solid #dcdfe6;
+    background: #ffffff;
+    padding: 0 16px;
+    color: #000000;
+    font-size: 12px;
+    line-height: 26px;
+    transition: color 0.2s, border-color 0.2s;
+  }
+
+  .zw-default-btn:hover {
+    border-color: #00bf8a;
+    color: #00bf8a;
+  }
+}
+
+/* 滚动条（浅色主题） */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #f1f5f9; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #86909c; }
+
+/* 详情页分项进度条动画 */
+@keyframes progress-fill {
+  from { width: 0%; }
+  to   { width: var(--target-width); }
+}
+.progress-bar-animated {
+  animation: progress-fill 0.8s ease-out forwards;
+}
+
+/* 顶部加载进度条动画 */
+@keyframes top-bar-slide {
+  0%   { transform: translateX(-100%); }
+  60%  { transform: translateX(-10%); }
+  100% { transform: translateX(0%); }
+}
+.top-loading-bar {
+  animation: top-bar-slide 1.2s ease-out forwards;
+}

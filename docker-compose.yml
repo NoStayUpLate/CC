@@ -1,0 +1,84 @@
+# 生产形态 compose：Caddy(443/80) → frontend(nginx) → backend(FastAPI) → ClickHouse(外部)
+#
+# 本地 dev 请用 `启动.bat` 或手动 `npm run dev` + uvicorn，或加载 docker-compose.dev.yml override：
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# 上云步骤：
+#   1. 准备 .env.production（复制 .env.production.example，填 JWT_SECRET / AUTH_USERS / DOMAIN 等）
+#   2. docker compose --env-file .env.production up -d --build
+#   3. 域名 A 记录指向 ECS 公网 IP，开放 80/443
+#   4. Caddy 自动签 Let's Encrypt 证书
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: novel_backend
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_HOST:     ${CLICKHOUSE_HOST}
+      CLICKHOUSE_PORT:     ${CLICKHOUSE_PORT:-8123}
+      CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE:-analysis}
+      CLICKHOUSE_USERNAME: ${CLICKHOUSE_USERNAME:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      SCRAPER_HEADLESS:    "true"
+      # 鉴权
+      AUTH_BACKEND:        ${AUTH_BACKEND:-file}
+      AUTH_USERS:          ${AUTH_USERS:-}
+      AUTH_SQLITE_PATH:    /data/auth_users.db
+      JWT_SECRET:          ${JWT_SECRET}
+      JWT_EXPIRE_HOURS:    ${JWT_EXPIRE_HOURS:-8}
+      COOKIE_SECURE:       "true"
+      COOKIE_SAMESITE:     ${COOKIE_SAMESITE:-lax}
+      REGISTRATION_CODE:   ${REGISTRATION_CODE:-}
+      # 定时任务
+      SCHEDULE_ENABLED:    ${SCHEDULE_ENABLED:-true}
+      SCHEDULE_HOUR:       ${SCHEDULE_HOUR:-2}
+    volumes:
+      - backend_data:/data    # SQLite 用户库等持久化
+    expose:
+      - "8000"                # 仅对 compose 内网开放，不暴露宿主端口
+    networks:
+      - app
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: novel_frontend
+    restart: unless-stopped
+    expose:
+      - "80"                  # 仅对 compose 内网开放
+    depends_on:
+      - backend
+    networks:
+      - app
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: novel_caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN:      ${DOMAIN}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+    networks:
+      - app
+
+volumes:
+  backend_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  app:
+    driver: bridge
