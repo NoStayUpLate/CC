@@ -44,6 +44,7 @@ scraper(list[dict]) → service(batch_insert) → ClickHouse → SQL 内算 GHI(
 | [run_wattpad_keywords.py](run_wattpad_keywords.py) | 一次性脚本（关键词回填），不是定时任务；连接信息走环境变量，缺失会 fail-fast |
 | [启动.bat](启动.bat) | Windows 一键启动后端 + 前端（轮询端口 + 自动 npm install） |
 | [docs/PRODUCTION.md](docs/PRODUCTION.md) | **生产部署快照**：服务器位置、运行容器、当前限制 — 进入项目首先读这份 |
+| [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) | **完整上云教程**：给同事按图施工用，含 MobaXterm + Docker + 多种数据库部署对比 |
 
 ---
 
@@ -138,6 +139,7 @@ open http://localhost:8000/docs
 
 - **新增爬虫 / 接入新平台** → 必读 [.claude/skills/add-scraper/SKILL.md](.claude/skills/add-scraper/SKILL.md)
 - **架构审计 / 加固 / 防泄密**（**通用，可移植到任何项目**）→ [.claude/skills/project-hardening/SKILL.md](.claude/skills/project-hardening/SKILL.md)
+- **看板设计模式**（筛选器 / 悬浮提示 / 折叠可视化 / 右侧抽屉 / 表格-分页-状态按钮 / 布局骨架，**项目内 + 可移植双模**）→ [.claude/skills/dashboard-patterns/SKILL.md](.claude/skills/dashboard-patterns/SKILL.md)
 
 后续如需新增"前端组件规范 / SQL 查询规范 / GHI 调整"等 skill，在此追加一行指针即可。
 

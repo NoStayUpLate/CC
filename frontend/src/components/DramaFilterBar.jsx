@@ -1,5 +1,5 @@
 import { Search, SlidersHorizontal } from "lucide-react";
-import { MultiSelectFilter, SelectFilter } from "./DropdownFilter";
+import { MultiSelectFilter } from "./DropdownFilter";
 
 const LANG_LABEL = {
   en: "英语",
@@ -60,26 +60,48 @@ export default function DramaFilterBar({
     label: LANG_LABEL[l] || l,
   }));
 
-  const platformRecommendationValues =
-    PLATFORM_RECOMMENDATION_OPTIONS[filters.platform] ||
-    RECOMMENDATION_OPTIONS.map((item) => item.val);
+  // 推荐栏位级联：取所选平台并集（多选时显示任意平台支持的栏位），
+  // 没选平台时显示所有栏位。
+  const selectedPlatforms = (filters.platform || "")
+    .split(",").map((s) => s.trim()).filter(Boolean);
+  const platformRecommendationValues = selectedPlatforms.length
+    ? Array.from(new Set(
+        selectedPlatforms.flatMap(
+          (p) => PLATFORM_RECOMMENDATION_OPTIONS[p] || RECOMMENDATION_OPTIONS.map((it) => it.val)
+        )
+      ))
+    : RECOMMENDATION_OPTIONS.map((item) => item.val);
   const recommendationOptions = RECOMMENDATION_OPTIONS.filter((item) =>
     platformRecommendationValues.includes(item.val)
   );
-  const recommendationValue = recommendationOptions.some(
-    (item) => item.val === filters.rank_type
-  )
-    ? filters.rank_type
-    : "";
+  // 多选模式下仅保留仍然可选的 rank_type，避免切换平台后留下"幽灵选中"
+  const allowedRankTypes = new Set(recommendationOptions.map((it) => it.val));
+  const filteredRankTypeValue = (filters.rank_type || "")
+    .split(",").map((s) => s.trim()).filter(Boolean)
+    .filter((v) => allowedRankTypes.has(v))
+    .join(",");
 
   const tagOptions = (topTags || [])
     .filter((t) => !RECOMMENDATION_TAGS.has(t))
     .map((t) => ({ val: t, label: t }));
 
-  const handlePlatformSelect = (value) => {
+  const handlePlatformChange = (value) => {
     onChange("platform", value);
+    // 切换平台后，把当前 rank_type 中已经不属于新平台并集的项剔除
     if (filters.rank_type) {
-      onChange("rank_type", "");
+      const newPlatforms = value.split(",").map((s) => s.trim()).filter(Boolean);
+      const newAllowed = newPlatforms.length
+        ? new Set(newPlatforms.flatMap(
+            (p) => PLATFORM_RECOMMENDATION_OPTIONS[p] || RECOMMENDATION_OPTIONS.map((it) => it.val)
+          ))
+        : new Set(RECOMMENDATION_OPTIONS.map((it) => it.val));
+      const cleaned = filters.rank_type
+        .split(",").map((s) => s.trim()).filter(Boolean)
+        .filter((v) => newAllowed.has(v))
+        .join(",");
+      if (cleaned !== filters.rank_type) {
+        onChange("rank_type", cleaned);
+      }
     }
   };
 
@@ -99,16 +121,16 @@ export default function DramaFilterBar({
       </div>
       <div className="grid grid-cols-1 gap-x-6 gap-y-3 lg:grid-cols-2 xl:grid-cols-4">
         {platformOptions.length > 0 && (
-          <SelectFilter
+          <MultiSelectFilter
             label="平台"
             options={platformOptions}
             value={filters.platform || ""}
-            onChange={handlePlatformSelect}
+            onChange={handlePlatformChange}
           />
         )}
 
         {langOptions.length > 0 && (
-          <SelectFilter
+          <MultiSelectFilter
             label="语种"
             options={langOptions}
             value={filters.lang || ""}
@@ -116,10 +138,10 @@ export default function DramaFilterBar({
           />
         )}
 
-        <SelectFilter
+        <MultiSelectFilter
           label="推荐栏位"
           options={recommendationOptions}
-          value={recommendationValue}
+          value={filteredRankTypeValue}
           onChange={(v) => onChange("rank_type", v)}
         />
 

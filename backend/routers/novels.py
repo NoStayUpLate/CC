@@ -80,6 +80,13 @@ _COUNT_SQL_TEMPLATE = "SELECT count() FROM novels {where_clause}"
 # ─────────────────────────────────────────────────────────────
 # 工具函数：安全构建 WHERE 子句（参数化防注入）
 # ─────────────────────────────────────────────────────────────
+def _split_csv(value: Optional[str]) -> list[str]:
+    """前端把多选值用逗号拼成 'a,b,c' 传过来，这里拆回列表。"""
+    if not value:
+        return []
+    return [v.strip() for v in value.split(",") if v.strip()]
+
+
 def _build_where(
     platform: Optional[str],
     lang: Optional[str],
@@ -90,18 +97,22 @@ def _build_where(
 ) -> tuple[str, dict]:
     """
     返回 (where_clause_str, params_dict)。
+    platform / lang / rank_type 支持逗号分隔多选；
+    tags 始终走 hasAny 多值匹配（与之前一致）。
     ClickHouse 参数化占位符语法：{name:Type}
     """
     conditions: list[str] = []
     params: dict = {}
 
-    if platform:
-        conditions.append("platform = {platform:String}")
-        params["platform"] = platform
+    platforms = _split_csv(platform)
+    if platforms:
+        conditions.append("platform IN {platforms:Array(String)}")
+        params["platforms"] = platforms
 
-    if lang:
-        conditions.append("lang = {lang:String}")
-        params["lang"] = lang
+    langs = _split_csv(lang)
+    if langs:
+        conditions.append("lang IN {langs:Array(String)}")
+        params["langs"] = langs
 
     if tags:
         # 多标签逗号分隔，转小写后用 hasAny 匹配
@@ -123,9 +134,10 @@ def _build_where(
     elif date_range == "month":
         conditions.append("created_at >= toStartOfMonth(today())")
 
-    if rank_type:
-        conditions.append("rank_type = {rank_type:String}")
-        params["rank_type"] = rank_type
+    rank_types = _split_csv(rank_type)
+    if rank_types:
+        conditions.append("rank_type IN {rank_types:Array(String)}")
+        params["rank_types"] = rank_types
 
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
     return where, params
@@ -160,12 +172,12 @@ def _row_to_novel(row: dict) -> NovelOut:
 # ─────────────────────────────────────────────────────────────
 @router.get("", response_model=NovelsResponse)
 def list_novels(
-    platform: Optional[str] = Query(None, description="平台名称，如 wattpad"),
-    lang: Optional[str] = Query(None, description="语种代码，如 en / ja / ko"),
+    platform: Optional[str] = Query(None, description="平台名称，多选用逗号分隔"),
+    lang: Optional[str] = Query(None, description="语种代码，多选用逗号分隔"),
     tags: Optional[str] = Query(None, description="逗号分隔标签，如 werewolf,romance"),
     title: Optional[str] = Query(None, description="书名关键词（模糊搜索）"),
     date_range: Optional[str] = Query(None, description="时间范围: today / week / month"),
-    rank_type: Optional[str] = Query(None, description="榜单类型: daily / weekly / monthly"),
+    rank_type: Optional[str] = Query(None, description="榜单类型，多选用逗号分隔，如 daily,weekly"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ):

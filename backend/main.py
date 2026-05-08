@@ -19,6 +19,7 @@ from database import init_db_async
 from routers.auth import router as auth_router
 from routers.dramas import router as dramas_router
 from routers.novels import router as novels_router
+from routers.overview import router as overview_router
 from routers.scraper import router as scraper_router
 from services.scheduler import setup_scheduler
 
@@ -79,6 +80,7 @@ _protected = [Depends(require_user)]
 app.include_router(novels_router, dependencies=_protected)
 app.include_router(dramas_router, dependencies=_protected)
 app.include_router(scraper_router, dependencies=_protected)
+app.include_router(overview_router, dependencies=_protected)
 
 
 @app.get("/health")

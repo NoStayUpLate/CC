@@ -35,13 +35,18 @@ Thumbs.db
 # ── Claude Code 本地配置（用户私有，不公开）──
 .claude/settings.local.json
 .claude/local/
+.claude/scheduled_tasks.lock
 
 # ── pip 误命令产生的垃圾文件（如 pip install =0.27）──
 backend/=*
 
 # ── 日志 ──
 *.log
+logs/
 
 # ── Caddy 数据（容器内挂载，不应进仓库）──
 caddy_data/
 caddy_config/
+
+# ── 本地 ClickHouse dump（scripts/dump_local_data.py 的产物）──
+seed/

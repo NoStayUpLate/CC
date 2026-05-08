@@ -138,6 +138,11 @@ export const fetchNovel = (novelId) => get(`/novels/${novelId}`);
 // 海外短剧 API
 // ─────────────────────────────────────────────────────────────
 
+/**
+ * 数据抓取概览：每平台统计 + 当前定时任务计划。
+ */
+export const fetchScrapeOverview = () => get("/overview");
+
 export const fetchDramas = (filters) => get("/dramas", filters);
 export const fetchDramaPlatforms = () => get("/dramas/meta/platforms");
 export const fetchDramaLangs = () => get("/dramas/meta/langs");

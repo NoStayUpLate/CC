@@ -73,18 +73,32 @@ FROM (
 """.format(s_tags=_S_TAGS_SQL, a_tags=_A_TAGS_SQL)
 
 
+def _split_csv(value: Optional[str]) -> list[str]:
+    """前端把多选值用逗号拼成 'a,b,c' 传过来，这里拆回列表。"""
+    if not value:
+        return []
+    return [v.strip() for v in value.split(",") if v.strip()]
+
+
 def _build_where(
     platform: Optional[str],
     title: Optional[str],
     date_range: Optional[str],
     rank_type: Optional[str],
+    lang: Optional[str] = None,
 ) -> tuple[str, dict]:
     conditions: list[str] = []
     params: dict = {}
 
-    if platform:
-        conditions.append("platform = {platform:String}")
-        params["platform"] = platform
+    platforms = _split_csv(platform)
+    if platforms:
+        conditions.append("platform IN {platforms:Array(String)}")
+        params["platforms"] = platforms
+
+    langs = _split_csv(lang)
+    if langs:
+        conditions.append("lang IN {langs:Array(String)}")
+        params["langs"] = langs
 
     if title:
         conditions.append("lower(title) LIKE {title_pat:String}")
@@ -97,9 +111,10 @@ def _build_where(
     elif date_range == "month":
         conditions.append("created_at >= toStartOfMonth(today())")
 
-    if rank_type:
-        conditions.append("rank_type = {rank_type:String}")
-        params["rank_type"] = rank_type
+    rank_types = _split_csv(rank_type)
+    if rank_types:
+        conditions.append("rank_type IN {rank_types:Array(String)}")
+        params["rank_types"] = rank_types
 
     where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
     return where_clause, params
@@ -130,14 +145,15 @@ def _row_to_drama(row: dict) -> DramaOut:
 
 @router.get("", response_model=DramasResponse)
 def list_dramas(
-    platform: Optional[str] = Query(None, description="平台名称，如 reelshort"),
+    platform: Optional[str] = Query(None, description="平台名称，多选用逗号分隔"),
+    lang: Optional[str] = Query(None, description="内容语言，多选用逗号分隔"),
     title: Optional[str] = Query(None, description="短剧标题关键词"),
     date_range: Optional[str] = Query(None, description="时间范围: today / week / month"),
-    rank_type: Optional[str] = Query(None, description="榜单类型，如 轮播推荐 / 推荐栏位 / 最近上新"),
+    rank_type: Optional[str] = Query(None, description="榜单类型，多选用逗号分隔"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ):
-    where_clause, params = _build_where(platform, title, date_range, rank_type)
+    where_clause, params = _build_where(platform, title, date_range, rank_type, lang)
     offset = (page - 1) * page_size
 
     sql = _DHI_SQL_TEMPLATE.format(where_clause=where_clause)

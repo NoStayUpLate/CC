@@ -256,7 +256,7 @@ export default function DramaInsights({ filters, queryVersion, onDramaClick }) {
           className="ml-auto inline-flex h-8 items-center gap-1.5 rounded px-3 text-[11px] text-black hover:bg-[#f5f7fa] hover:text-brand transition-colors"
           title={collapsed ? "展开可视化" : "收起可视化"}
         >
-          <span className="opacity-70">基于当前筛选下 {stats.total} 部短剧</span>
+          <span>{collapsed ? "展开" : "收起"}</span>
           {collapsed ? (
             <ChevronDown size={14} strokeWidth={1.7} />
           ) : (
@@ -328,6 +328,8 @@ function OverviewTab({ stats }) {
                 />
                 <Tooltip
                   cursor={{ fill: "rgba(0,191,138,0.08)" }}
+                  isAnimationActive={false}
+                  wrapperStyle={{ transition: "none" }}
                   content={
                     <KvTooltip
                       titleKey="label"
@@ -355,6 +357,8 @@ function OverviewTab({ stats }) {
             <ResponsiveContainer width="100%" height={260}>
               <PieChart>
                 <Tooltip
+                  isAnimationActive={false}
+                  wrapperStyle={{ transition: "none" }}
                   content={
                     <KvTooltip
                       titleKey="rank_type"
@@ -475,6 +479,8 @@ function TagScatter({ items }) {
           <ZAxis range={[60, 60]} />
           <Tooltip
             cursor={{ strokeDasharray: "3 3", stroke: "#cbd5e1" }}
+            isAnimationActive={false}
+            wrapperStyle={{ transition: "none" }}
             content={
               <KvTooltip
                 titleKey="tag"
@@ -626,7 +632,12 @@ function RankingTab({ stats, onDramaClick }) {
             interval={0}
             stroke="#cbd5e1"
           />
-          <Tooltip cursor={{ fill: "rgba(0,191,138,0.08)" }} content={<DramaTooltip />} />
+          <Tooltip
+            cursor={{ fill: "rgba(0,191,138,0.08)" }}
+            isAnimationActive={false}
+            wrapperStyle={{ transition: "none" }}
+            content={<DramaTooltip />}
+          />
           <Bar
             dataKey="heat_score"
             radius={[0, 4, 4, 0]}

@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
+  Activity,
   BookOpen,
-  ChevronDown,
-  ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   Clapperboard,
   FileText,
   Info,
@@ -18,8 +19,8 @@ import NovelModal from "./components/NovelModal";
 import DramaTable from "./components/DramaTable";
 import DramaModal from "./components/DramaModal";
 import DramaInsights from "./components/DramaInsights";
+import ScrapeOverviewPage from "./components/ScrapeOverviewPage";
 import SystemOverviewModal from "./components/SystemOverviewModal";
-import ResultCounter from "./components/ResultCounter";
 import LoginPage from "./components/LoginPage";
 import { useAuth } from "./hooks/useAuth";
 import {
@@ -27,17 +28,12 @@ import {
   fetchDramaLangs,
   fetchDramaTags,
   fetchDramas,
-  fetchDramaScrapeStatus,
   fetchLangs,
   fetchNovels,
   fetchPlatforms,
-  fetchScrapeStatus,
   fetchTags,
-  triggerDramaScrape,
-  triggerScrape,
 } from "./api/client";
 
-const POLL_MS = 2000;
 const PAGE_SIZE = 24;
 const TAB_SWITCH_MS = 180;
 
@@ -59,6 +55,11 @@ const MODULE_META = {
     title: "海外短剧检测",
     subtitle: "Short Drama Insight",
     breadcrumb: ["海外内容监测", "短剧检测"],
+  },
+  scrape: {
+    title: "数据抓取概览",
+    subtitle: "Scrape Overview",
+    breadcrumb: ["海外内容监测", "数据抓取概览"],
   },
 };
 
@@ -82,13 +83,6 @@ function Dashboard({ user, onLogout }) {
   const [platforms, setPlatforms] = useState([]);
   const [langs, setLangs] = useState([]);
   const [topTags, setTopTags] = useState([]);
-  const [novelScrapeTask, setNovelScrapeTask] = useState(null);
-  const [novelScrapePanel, setNovelScrapePanel] = useState(false);
-  const [novelScrapeForm, setNovelScrapeForm] = useState({
-    platform: "wattpad",
-    genre: "",
-    limit: 50,
-  });
 
   // 短剧状态
   const [dramaDraftFilters, setDramaDraftFilters] = useState(EMPTY_FILTERS);
@@ -103,16 +97,6 @@ function Dashboard({ user, onLogout }) {
   const [dramaPlatforms, setDramaPlatforms] = useState([]);
   const [dramaLangs, setDramaLangs] = useState([]);
   const [dramaTopTags, setDramaTopTags] = useState([]);
-  const [dramaScrapeTask, setDramaScrapeTask] = useState(null);
-  const [dramaScrapePanel, setDramaScrapePanel] = useState(false);
-  const [dramaScrapeForm, setDramaScrapeForm] = useState({
-    platform: "shortdrama_top5",
-    genre: "",
-    limit: 80,
-  });
-
-  const novelPollRef = useRef(null);
-  const dramaPollRef = useRef(null);
 
   useEffect(() => {
     fetchPlatforms().then((d) => setPlatforms(d.platforms || [])).catch(() => {});
@@ -157,11 +141,6 @@ function Dashboard({ user, onLogout }) {
     loadDramas(dramaPage, dramaFilters);
   }, [dramaFilters, dramaPage, dramaQueryVersion, loadDramas]);
 
-  useEffect(() => () => {
-    clearInterval(novelPollRef.current);
-    clearInterval(dramaPollRef.current);
-  }, []);
-
   useEffect(() => {
     if (activeTab === displayTab) return undefined;
     setTabVisible(false);
@@ -171,42 +150,6 @@ function Dashboard({ user, onLogout }) {
     }, TAB_SWITCH_MS);
     return () => clearTimeout(timer);
   }, [activeTab, displayTab]);
-
-  const handleNovelScrape = async () => {
-    try {
-      const task = await triggerScrape(novelScrapeForm);
-      setNovelScrapeTask(task);
-      novelPollRef.current = setInterval(async () => {
-        const status = await fetchScrapeStatus(task.task_id).catch(() => null);
-        if (!status) return;
-        setNovelScrapeTask(status);
-        if (status.status === "done" || status.status === "failed") {
-          clearInterval(novelPollRef.current);
-          if (status.status === "done") loadNovels(1, novelFilters);
-        }
-      }, POLL_MS);
-    } catch (err) {
-      alert(`触发失败: ${err.message}`);
-    }
-  };
-
-  const handleDramaScrape = async () => {
-    try {
-      const task = await triggerDramaScrape(dramaScrapeForm);
-      setDramaScrapeTask(task);
-      dramaPollRef.current = setInterval(async () => {
-        const status = await fetchDramaScrapeStatus(task.task_id).catch(() => null);
-        if (!status) return;
-        setDramaScrapeTask(status);
-        if (status.status === "done" || status.status === "failed") {
-          clearInterval(dramaPollRef.current);
-          if (status.status === "done") loadDramas(1, dramaFilters);
-        }
-      }, POLL_MS);
-    } catch (err) {
-      alert(`触发失败: ${err.message}`);
-    }
-  };
 
   const handleTabChange = (tab) => {
     setActiveTab(tab);
@@ -226,9 +169,10 @@ function Dashboard({ user, onLogout }) {
   };
 
   const currentMeta = MODULE_META[displayTab];
-  const currentTotal = displayTab === "novels" ? novelTotal : dramaTotal;
-  const currentLoading = displayTab === "novels" ? novelLoading : dramaLoading;
-  const currentTask = displayTab === "novels" ? novelScrapeTask : dramaScrapeTask;
+  const currentTotal =
+    displayTab === "novels" ? novelTotal : displayTab === "dramas" ? dramaTotal : null;
+  const currentLoading =
+    displayTab === "novels" ? novelLoading : displayTab === "dramas" ? dramaLoading : false;
 
   return (
     <div className="min-h-screen bg-[#e5e7eb] text-black">
@@ -237,64 +181,64 @@ function Dashboard({ user, onLogout }) {
         <SiderContent activeTab={activeTab} onChange={handleTabChange} mobile />
       </MobileSider>
 
-      <div className="min-h-screen md:pl-[120px]">
-        <header className="sticky top-0 z-30 h-[50px] border-b border-[#ebeef5] bg-white">
-          <div className="flex h-full items-center justify-between gap-3 px-4">
-            <div className="flex min-w-0 items-center gap-3">
-              <button
-                onClick={() => setSiderOpen(true)}
-                className="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-200 text-black md:hidden"
-                aria-label="打开导航"
-              >
-                <Menu size={18} strokeWidth={1.7} />
-              </button>
-              <div className="min-w-0">
-                <div className="truncate text-sm font-semibold text-black">
-                  {currentMeta.title}
+      <div className="min-h-screen md:pl-[160px]">
+        {/*
+          整页只有 <main> 一个滚动条；header 与面包屑都在 main 里，
+          滚动时随内容一起上移消失，让位给 sticky thead 真正贴在浏览器顶端。
+        */}
+        <main className="h-screen overflow-y-auto bg-[#e5e7eb]">
+          <header className="h-[50px] border-b border-[#ebeef5] bg-white">
+            <div className="flex h-full items-center justify-between gap-3 px-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <button
+                  onClick={() => setSiderOpen(true)}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-200 text-black md:hidden"
+                  aria-label="打开导航"
+                >
+                  <Menu size={18} strokeWidth={1.7} />
+                </button>
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold text-black">
+                    {currentMeta.title}
+                  </div>
+                  <div className="hidden text-[11px] text-black sm:block">
+                    {currentMeta.subtitle}
+                  </div>
                 </div>
-                <div className="hidden text-[11px] text-black sm:block">
-                  {currentMeta.subtitle}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setSystemOverviewOpen(true)}
+                  className="inline-flex h-7 items-center gap-1 rounded border border-brand-light bg-brand-light px-2.5 text-[11px] font-medium text-brand transition-colors hover:bg-brand hover:text-white"
+                  title="查看系统说明（业务价值 / 创新度 / 开发难度）"
+                >
+                  <FileText size={12} strokeWidth={1.8} />
+                  <span>系统说明</span>
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setSystemOverviewOpen(true)}
-                className="inline-flex h-7 items-center gap-1 rounded border border-brand-light bg-brand-light px-2.5 text-[11px] font-medium text-brand transition-colors hover:bg-brand hover:text-white"
-                title="查看系统说明（业务价值 / 创新度 / 开发难度）"
-              >
-                <FileText size={12} strokeWidth={1.8} />
-                <span>系统说明</span>
-              </button>
-            </div>
 
-            <div className="flex items-center gap-4 text-xs text-black">
-              <span className="hidden sm:inline">当前数据 {currentTotal}</span>
-              {currentLoading && <span className="text-brand">查询中</span>}
-              {currentTask?.status && (
-                <span className="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1">
-                  <StatusDot status={currentTask.status} />
-                  {taskStatusText(currentTask.status)}
-                </span>
-              )}
-              {user && (
-                <span className="hidden text-slate-500 sm:inline">
-                  {user.username}
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={onLogout}
-                className="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 hover:bg-slate-50"
-                title="登出"
-              >
-                <LogOut size={12} strokeWidth={1.7} />
-                <span className="hidden sm:inline">登出</span>
-              </button>
+              <div className="flex items-center gap-4 text-xs text-black">
+                {currentTotal !== null && (
+                  <span className="hidden sm:inline">当前数据 {currentTotal}</span>
+                )}
+                {currentLoading && <span className="text-brand">查询中</span>}
+                {user && (
+                  <span className="hidden text-slate-500 sm:inline">
+                    {user.username}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  className="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 hover:bg-slate-50"
+                  title="登出"
+                >
+                  <LogOut size={12} strokeWidth={1.7} />
+                  <span className="hidden sm:inline">登出</span>
+                </button>
+              </div>
             </div>
-          </div>
-        </header>
+          </header>
 
-        <main className="h-[calc(100vh-50px)] overflow-y-auto bg-[#e5e7eb]">
           <div className="flex h-9 items-center bg-[#f0eef6] px-3 text-xs text-black">
             {currentMeta.breadcrumb.map((item, idx) => (
               <span key={item}>
@@ -306,27 +250,20 @@ function Dashboard({ user, onLogout }) {
             ))}
           </div>
 
+          {/*
+            ⚠️ 这里只能用 opacity 做切换动画，不要再加 translate-y-*。
+            一旦加了 transform，里面 DramaTable 的 sticky thead 会失效——
+            transform 会让浏览器把当前元素当作 sticky 的「containing block」，
+            导致 thead 沿着这个块滚走而不是贴浏览器顶端。
+          */}
           <div
-            className={`space-y-3 p-3 transition-all duration-200 ease-out
-              ${tabVisible ? "translate-y-0 opacity-100" : "translate-y-1 opacity-0"}`}
+            className={`space-y-3 p-3 transition-opacity duration-200 ease-out
+              ${tabVisible ? "opacity-100" : "opacity-0"}`}
           >
-            {displayTab === "novels" ? (
+            {displayTab === "scrape" ? (
+              <ScrapeOverviewPage />
+            ) : displayTab === "novels" ? (
               <section className="space-y-4">
-                <ScrapePanel
-                  open={novelScrapePanel}
-                  onToggle={() => setNovelScrapePanel((v) => !v)}
-                  title="小说爬取任务"
-                  form={novelScrapeForm}
-                  setForm={setNovelScrapeForm}
-                  task={novelScrapeTask}
-                  onSubmit={handleNovelScrape}
-                  options={[
-                    { value: "wattpad", label: "Wattpad" },
-                    { value: "royal_road", label: "Royal Road" },
-                    { value: "syosetu_weekly", label: "Syosetu 周榜" },
-                  ]}
-                />
-
                 <FilterBar
                   filters={novelDraftFilters}
                   onChange={(k, v) => {
@@ -338,8 +275,13 @@ function Dashboard({ user, onLogout }) {
                   topTags={topTags}
                 />
 
-                <div className="zw-card flex flex-wrap items-center justify-between gap-3">
-                  <ResultCounter total={novelTotal} loading={novelLoading} error={novelError} />
+                {novelError && (
+                  <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-500">
+                    查询失败：{novelError}
+                  </div>
+                )}
+
+                <div className="flex justify-end">
                   <GhiInfoTooltip />
                 </div>
 
@@ -357,17 +299,6 @@ function Dashboard({ user, onLogout }) {
               </section>
             ) : (
               <section className="space-y-4">
-                <ScrapePanel
-                  open={dramaScrapePanel}
-                  onToggle={() => setDramaScrapePanel((v) => !v)}
-                  title="短剧爬取任务（TOP5 平台爆款）"
-                  form={dramaScrapeForm}
-                  setForm={setDramaScrapeForm}
-                  task={dramaScrapeTask}
-                  onSubmit={handleDramaScrape}
-                  options={[{ value: "shortdrama_top5", label: "TOP5 平台聚合抓取" }]}
-                />
-
                 <DramaFilterBar
                   filters={dramaDraftFilters}
                   platforms={dramaPlatforms}
@@ -379,10 +310,11 @@ function Dashboard({ user, onLogout }) {
                   onSearch={handleDramaSearch}
                 />
 
-                <div className="zw-card flex flex-wrap items-center justify-between gap-3">
-                  <ResultCounter total={dramaTotal} loading={dramaLoading} error={dramaError} />
-                  <DhiInfoTooltip />
-                </div>
+                {dramaError && (
+                  <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-500">
+                    查询失败：{dramaError}
+                  </div>
+                )}
 
                 <DramaInsights
                   filters={dramaFilters}
@@ -394,9 +326,14 @@ function Dashboard({ user, onLogout }) {
                   dramas={dramas}
                   loading={dramaLoading}
                   onTitleClick={setActiveDrama}
+                  footer={
+                    <Pagination
+                      page={dramaPage}
+                      total={dramaTotal}
+                      onChange={setDramaPage}
+                    />
+                  }
                 />
-
-                <Pagination page={dramaPage} total={dramaTotal} onChange={setDramaPage} />
               </section>
             )}
           </div>
@@ -424,7 +361,7 @@ function GhiInfoTooltip() {
         <Info size={12} strokeWidth={1.5} />
       </span>
 
-      <div className="absolute right-0 top-full mt-2 w-[480px] z-50
+      <div className="absolute right-0 bottom-full mb-2 w-[480px] z-50
                       invisible opacity-0 translate-y-1
                       group-hover:visible group-hover:opacity-100 group-hover:translate-y-0
                       transition-all duration-200
@@ -440,61 +377,11 @@ function GhiInfoTooltip() {
   );
 }
 
-/** DHI 算法悬浮提示（鼠标悬停展开，向左弹出） */
-function DhiInfoTooltip() {
-  return (
-    <div className="relative group">
-      <span className="text-xs text-black cursor-default select-none group-hover:text-brand transition-colors duration-200 flex items-center gap-1">
-        DHI 算法
-        <Info size={12} strokeWidth={1.5} />
-      </span>
-
-      <div className="absolute right-0 top-full mt-2 w-[520px] z-50
-                      invisible opacity-0 translate-y-1
-                      group-hover:visible group-hover:opacity-100 group-hover:translate-y-0
-                      transition-all duration-200
-                      bg-white border border-zw-border rounded-lg p-4 space-y-3 shadow-[0_12px_36px_rgba(15,23,42,0.12)]">
-        <div className="px-3 py-2 text-xs text-black border border-zw-border rounded bg-[#f7f8fa]">
-          DHI = S_tag × 0.45 + S_position × 0.35 + S_recency × 0.20
-        </div>
-        <ul className="text-xs text-black leading-relaxed space-y-1 ml-4 list-disc">
-          <li><strong>S_tag</strong>：题材匹配度，命中 S 级标签 +25 / A 级 +12，基线 50，cap 100</li>
-          <li><strong>S_position</strong>：资源位强度，按平台内名次线性换算（第 1 名 100，每后退 -8）</li>
-          <li><strong>S_recency</strong>：数据新鲜度，距今 1 天 -10，10 天前归零</li>
-        </ul>
-        <p className="text-xs text-black leading-relaxed">
-          全部在 ClickHouse SQL 内计算，与小说 GHI 模式对仗，前端只做展示。
-        </p>
-      </div>
-    </div>
-  );
-}
-
-/** 爬取状态指示点 */
-function StatusDot({ status }) {
-  const cls = {
-    pending: "bg-slate-400",
-    running: "bg-brand animate-pulse",
-    done: "bg-emerald-500",
-    failed: "bg-red-500",
-  }[status] || "bg-slate-400";
-  return <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${cls}`} />;
-}
-
-function taskStatusText(status) {
-  return {
-    pending: "等待启动",
-    running: "爬取中",
-    done: "已完成",
-    failed: "失败",
-  }[status] || status;
-}
-
 function SiderContent({ activeTab, onChange, mobile = false }) {
   return (
     <aside
       className={`${mobile ? "flex" : "fixed left-0 top-0 z-40 hidden md:flex"}
-        h-screen w-[120px] flex-col border-r border-[#ebeef5] bg-white`}
+        h-screen w-[160px] flex-col border-r border-[#ebeef5] bg-white`}
     >
       <div className="flex h-[60px] items-center gap-2 px-4">
         <div className="flex h-7 w-7 items-center justify-center rounded-full border border-brand text-brand">
@@ -517,6 +404,12 @@ function SiderContent({ activeTab, onChange, mobile = false }) {
           icon={<Clapperboard size={17} strokeWidth={1.8} />}
           label="海外短剧检测"
           onClick={() => onChange("dramas")}
+        />
+        <NavItem
+          active={activeTab === "scrape"}
+          icon={<Activity size={17} strokeWidth={1.8} />}
+          label="数据抓取概览"
+          onClick={() => onChange("scrape")}
         />
       </nav>
 
@@ -552,7 +445,7 @@ function MobileSider({ open, onClose, children }) {
         onClick={onClose}
         aria-label="关闭导航"
       />
-      <div className="relative h-full w-[120px] bg-white shadow-xl">
+      <div className="relative h-full w-[160px] bg-white shadow-xl">
         {children}
         <button
           onClick={onClose}
@@ -563,93 +456,6 @@ function MobileSider({ open, onClose, children }) {
         </button>
       </div>
     </div>
-  );
-}
-
-function ScrapePanel({
-  open,
-  onToggle,
-  title,
-  form,
-  setForm,
-  task,
-  onSubmit,
-  options,
-}) {
-  return (
-    <>
-      <button
-        onClick={onToggle}
-        className="zw-primary-btn inline-flex items-center gap-1.5"
-      >
-        {open ? "收起抓取面板" : "触发爬取"}
-        {open ? <ChevronUp size={14} strokeWidth={1.5} /> : <ChevronDown size={14} strokeWidth={1.5} />}
-      </button>
-      {open && (
-        <div className="zw-card space-y-4">
-          <h2 className="text-sm font-semibold text-black">{title}</h2>
-          <div className="grid gap-3 md:grid-cols-[minmax(180px,240px)_minmax(180px,1fr)_120px_auto] md:items-end">
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs text-black">目标平台</label>
-              <select
-                value={form.platform}
-                onChange={(e) => setForm((f) => ({ ...f, platform: e.target.value }))}
-                className="zw-field w-full"
-              >
-                {options.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs text-black">关键词（可选）</label>
-              <input
-                type="text"
-                value={form.genre}
-                onChange={(e) => setForm((f) => ({ ...f, genre: e.target.value }))}
-                className="zw-field"
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs text-black">抓取条数</label>
-              <input
-                type="number"
-                min={1}
-                max={200}
-                value={form.limit}
-                onChange={(e) => setForm((f) => ({ ...f, limit: Number(e.target.value || 1) }))}
-                className="zw-field"
-              />
-            </div>
-            <button
-              onClick={onSubmit}
-              disabled={task?.status === "running" || task?.status === "pending"}
-              className="zw-primary-btn disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              开始爬取
-            </button>
-          </div>
-          {task && (
-            <div className="flex flex-wrap items-center gap-3 rounded bg-[#f7f8fa] px-3 py-2 text-sm">
-              <StatusDot status={task.status} />
-              <span className="font-medium text-black">
-                {task.status === "running" && "爬取中..."}
-                {task.status === "pending" && "等待启动..."}
-                {task.status === "done" && "爬取完成"}
-                {task.status === "failed" && `失败：${task.error}`}
-              </span>
-              {task.scraped > 0 && (
-                <span className="text-black">
-                  已抓取 {task.scraped} 条 / 已入库 {task.inserted} 条
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-    </>
   );
 }
 
@@ -682,63 +488,100 @@ function GridState({ loading, empty, emptyText, children }) {
   return <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">{children}</div>;
 }
 
+/**
+ * Pagination 组件本身**不带卡片外壳**（无 border / 无 bg），让它能直接
+ * 嵌进 DramaTable 的同一个 bordered 容器里，作为表格的「页脚」存在；
+ * 也能在没有 table 的页面（例如 NovelCard 网格）作为独立行使用。
+ *
+ * 全部内容居中单行：共 N 条 · < 1 2 3 4 5 6 ··· 42 >
+ */
 function Pagination({ page, total, onChange }) {
   const totalPages = Math.ceil(total / PAGE_SIZE);
-  if (totalPages <= 1) return null;
+  const showPages = totalPages > 1;
+  if (total === 0) return null;
   return (
-    <div className="zw-card flex flex-col items-center gap-2">
-      <div className="flex flex-wrap justify-center gap-2">
-        <PageButton label="上一页" disabled={page <= 1} onClick={() => onChange(page - 1)} />
-        {buildPageRange(page, totalPages).map((p, i) =>
-          p === "..." ? (
-            <span key={`ellipsis-${i}`} className="px-3 py-2 text-black">...</span>
-          ) : (
-            <PageButton key={p} label={p} active={p === page} onClick={() => onChange(p)} />
-          )
-        )}
-        <PageButton
-          label="下一页"
-          disabled={page >= totalPages}
-          onClick={() => onChange(page + 1)}
-        />
-      </div>
-      <span className="text-xs text-black">
-        第 {page} / {totalPages} 页
+    <div className="flex flex-wrap items-center justify-center gap-3 px-3 py-3">
+      <span className="text-sm text-black">
+        共
+        <span className="mx-1 font-semibold tabular-nums">
+          {total.toLocaleString("zh-CN")}
+        </span>
+        条
       </span>
+      {showPages && (
+        <div className="flex items-center gap-1">
+          <PageButton
+            label={<ChevronLeft size={14} strokeWidth={1.7} />}
+            ariaLabel="上一页"
+            disabled={page <= 1}
+            onClick={() => onChange(page - 1)}
+          />
+          {buildPageRange(page, totalPages).map((p, i) =>
+            p === "..." ? (
+              <span
+                key={`ellipsis-${i}`}
+                className="select-none px-1 text-xs text-slate-400"
+              >
+                ···
+              </span>
+            ) : (
+              <PageButton
+                key={p}
+                label={p}
+                active={p === page}
+                onClick={() => onChange(p)}
+              />
+            )
+          )}
+          <PageButton
+            label={<ChevronRight size={14} strokeWidth={1.7} />}
+            ariaLabel="下一页"
+            disabled={page >= totalPages}
+            onClick={() => onChange(page + 1)}
+          />
+        </div>
+      )}
     </div>
   );
 }
 
-/** 通用分页按钮 */
-function PageButton({ label, active, disabled, onClick }) {
+/** 通用分页按钮：方形 28×28，active 用 brand-light 高亮 + brand 文本 */
+function PageButton({ label, active, disabled, onClick, ariaLabel }) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`rounded px-3 py-2 text-sm transition-colors duration-200
+      aria-label={ariaLabel}
+      className={`flex h-7 min-w-[28px] items-center justify-center rounded px-2 text-xs tabular-nums transition-colors duration-200
         ${active
-          ? "bg-brand font-bold text-black"
-          : "border border-slate-200 bg-white text-black hover:border-brand hover:text-brand"
+          ? "border border-brand bg-brand-light font-semibold text-brand"
+          : "border border-[#dcdfe6] bg-white text-black hover:border-brand hover:text-brand"
         }
-        disabled:opacity-40 disabled:cursor-not-allowed`}
+        disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[#dcdfe6] disabled:hover:text-black`}
     >
       {label}
     </button>
   );
 }
 
+/**
+ * 7 页内全部展示；超过则按当前位置选择三种窗口：
+ *   - 头部窗口（current ≤ 4）：[1 2 3 4 5 6 ··· last]
+ *   - 尾部窗口（current ≥ last-3）：[1 ··· last-5 last-4 last-3 last-2 last-1 last]
+ *   - 中部窗口：[1 ··· current-1 current current+1 ··· last]
+ * 与 ElementUI / AntDesign 的默认 pager-count=7 一致。
+ */
 function buildPageRange(current, total) {
-  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
-  const pages = new Set([1, total, current, current - 1, current + 1].filter(
-    (p) => p >= 1 && p <= total
-  ));
-  const sorted = [...pages].sort((a, b) => a - b);
-  const result = [];
-  sorted.forEach((p, i) => {
-    if (i > 0 && p - sorted[i - 1] > 1) result.push("...");
-    result.push(p);
-  });
-  return result;
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  }
+  if (current <= 4) {
+    return [1, 2, 3, 4, 5, 6, "...", total];
+  }
+  if (current >= total - 3) {
+    return [1, "...", total - 5, total - 4, total - 3, total - 2, total - 1, total];
+  }
+  return [1, "...", current - 1, current, current + 1, "...", total];
 }
 
 // ─────────────────────────────────────────────────────────────

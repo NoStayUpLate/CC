@@ -2,7 +2,10 @@
 定时爬取调度器。
 
 任务表：
-  每天凌晨      → Wattpad / Syosetu 日榜
+  每天凌晨      → 小说: Wattpad / Syosetu 日榜
+                  短剧: shortdrama_top5（聚合 8 个平台：netshort / shortmax /
+                        reelshort / dramabox / dramareels / dramawave /
+                        goodshort / moboreels）
   每周一凌晨    → Royal Road 周榜 + Syosetu 周榜
   每月 1 号凌晨 → Syosetu 月榜
 
@@ -16,18 +19,27 @@ import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from config import settings
+from services.drama_scraper_service import (
+    create_task as create_drama_task,
+)
+from services.drama_scraper_service import (
+    run_scrape_task as run_drama_scrape_task,
+)
 from services.scraper_service import create_task, run_scrape_task
 
 logger = logging.getLogger(__name__)
 
 scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
 
-# 每天跑的平台（仅日榜）
+# 每天跑的小说平台（仅日榜）
 _DAILY_PLATFORMS = ["wattpad", "syosetu_daily"]
+
+# 每天跑的短剧平台（shortdrama_top5 是聚合入口，覆盖 8 个子平台）
+_DAILY_DRAMA_PLATFORMS = ["shortdrama_top5"]
 
 
 async def _run_platforms(platforms: list[str], label: str) -> None:
-    """顺序爬取指定平台列表，异常不中断后续任务。"""
+    """顺序爬取指定的小说平台列表，异常不中断后续任务。"""
     logger.info("[Scheduler] %s 开始，平台: %s", label, platforms)
     for platform in platforms:
         task_id = create_task()
@@ -45,8 +57,29 @@ async def _run_platforms(platforms: list[str], label: str) -> None:
     logger.info("[Scheduler] %s 结束", label)
 
 
+async def _run_drama_platforms(platforms: list[str], label: str) -> None:
+    """顺序爬取指定的短剧平台列表，异常不中断后续任务。"""
+    logger.info("[Scheduler] %s 开始，平台: %s", label, platforms)
+    for platform in platforms:
+        task_id = create_drama_task()
+        logger.info("[Scheduler] 短剧平台=%s task_id=%s", platform, task_id)
+        try:
+            await run_drama_scrape_task(
+                task_id=task_id,
+                platform=platform,
+                genre="",
+                limit=settings.schedule_limit,
+            )
+            logger.info("[Scheduler] 短剧平台=%s 完成", platform)
+        except Exception:
+            logger.exception("[Scheduler] 短剧平台=%s 爬取异常", platform)
+    logger.info("[Scheduler] %s 结束", label)
+
+
 async def _daily_job() -> None:
-    await _run_platforms(_DAILY_PLATFORMS, "日常爬取")
+    # 先跑小说，再跑短剧聚合（shortdrama_top5 涉及 Playwright，相对耗时，放在后面）
+    await _run_platforms(_DAILY_PLATFORMS, "日常爬取（小说）")
+    await _run_drama_platforms(_DAILY_DRAMA_PLATFORMS, "日常爬取（短剧聚合）")
 
 
 async def _weekly_job() -> None:
@@ -96,7 +129,7 @@ def setup_scheduler() -> AsyncIOScheduler:
 
     logger.info(
         "[Scheduler] 已注册 3 个任务，执行时间均为 %02d:%02d (Asia/Shanghai)\n"
-        "  daily  : 每天（wattpad / syosetu 日榜）\n"
+        "  daily  : 每天（wattpad / syosetu 日榜 + shortdrama_top5 聚合 8 个短剧平台）\n"
         "  weekly : 每周一（royal_road 周榜 / syosetu 周榜）\n"
         "  monthly: 每月 1 号（syosetu 月榜）",
         h, m,

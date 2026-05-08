@@ -5,11 +5,66 @@
  *   novel   - NovelOut 对象（null 时不渲染）
  *   onClose - () => void
  */
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useLayoutEffect } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { fetchNovel } from "../api/client";
 import WordCloud from "./WordCloud";
 
 const ENTER_LEAVE_MS = 260;
+const SUMMARY_CLAMP_LINES = 12;
+
+/** 简介展示组件：超过 12 行折叠，提供展开/收起按钮。 */
+function SummaryWithCollapse({ text }) {
+  const ref = useRef(null);
+  const [expanded, setExpanded] = useState(false);
+  const [overflowing, setOverflowing] = useState(false);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    // collapse 状态下用 scrollHeight 判定是否被截断（line-clamp 不影响 scrollHeight）
+    setOverflowing(el.scrollHeight - el.clientHeight > 1);
+  }, [text]);
+
+  if (!text) {
+    return <p className="text-sm italic text-black">暂无数据</p>;
+  }
+
+  const clampStyle = expanded
+    ? undefined
+    : {
+        display: "-webkit-box",
+        WebkitLineClamp: SUMMARY_CLAMP_LINES,
+        WebkitBoxOrient: "vertical",
+        overflow: "hidden",
+      };
+
+  return (
+    <div className="space-y-2">
+      <p
+        ref={ref}
+        className="text-sm text-black leading-relaxed whitespace-pre-line"
+        style={clampStyle}
+      >
+        {text}
+      </p>
+      {overflowing && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="inline-flex items-center gap-1 text-xs text-brand hover:text-brand-dark transition-colors"
+        >
+          {expanded ? "收起" : "展开全部"}
+          {expanded ? (
+            <ChevronUp size={12} strokeWidth={1.7} />
+          ) : (
+            <ChevronDown size={12} strokeWidth={1.7} />
+          )}
+        </button>
+      )}
+    </div>
+  );
+}
 
 function ghiLevel(ghi) {
   if (ghi >= 80) return { label: "S 级爆款潜力", color: "text-brand" };
@@ -157,9 +212,7 @@ export default function NovelModal({ novel, onClose }) {
           {/* 简介 */}
           <div>
             <h3 className="text-xs text-black mb-2 font-medium">小说简介</h3>
-            <p className="text-sm text-black leading-relaxed whitespace-pre-line">
-              {novel.summary || <span className="italic text-black">暂无数据</span>}
-            </p>
+            <SummaryWithCollapse text={novel.summary} />
           </div>
 
           {/* 标签 */}

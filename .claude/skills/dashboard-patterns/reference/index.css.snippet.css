@@ -1,0 +1,180 @@
+/*
+ * dashboard-patterns SKILL — index.css 片段
+ *
+ * 用途：把下面三段（@layer base 的页面默认 + @layer components 的 4 个
+ *       组件 class + 滚动条样式）合并到目标项目的 index.css 或全局
+ *       样式文件。Tailwind 已设置好后导入即可生效。
+ *
+ * 设计意图：把 .zw-field / .zw-card / .zw-primary-btn / .zw-default-btn
+ *          作为「字段 / 容器 / 主按钮 / 次按钮」的最小单元，让看板里
+ *          所有筛选器、表格卡、表单项的高度（28px）、字号（12px）、
+ *          圆角（2px）、边色（#dcdfe6）保持完全一致。
+ */
+
+/* ─────────────────────────────────────────────────────────
+ * @layer base：页面字体 + 主体背景
+ * 直接合并到目标项目 index.css 的 @layer base 块。
+ * ───────────────────────────────────────────────────────── */
+@layer base {
+  html {
+    font-family: "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB",
+      "Microsoft YaHei", Arial, sans-serif;
+    background: #e5e7eb;
+  }
+
+  body {
+    margin: 0;
+    background: #e5e7eb !important;
+    color: #000000;
+    font-size: 15px;
+    font-weight: 500;
+    line-height: 1.5;
+  }
+
+  #root {
+    min-height: 100vh;
+    background: #e5e7eb !important;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────
+ * @layer components：4 个核心组件 class
+ * ───────────────────────────────────────────────────────── */
+@layer components {
+  /* 容器卡：白底 + 浅灰描边 + 12px 内边距，是看板里所有"区块"的统一外壳 */
+  .zw-card {
+    border-radius: 2px;
+    border: 1px solid #ebeef5;
+    background: #ffffff;
+    padding: 12px;
+    box-shadow: none;
+  }
+
+  .zw-card-hover {
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+
+  .zw-card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+  }
+
+  /* 字段：input / select / 多选触发器统一高度 28px、字号 12px */
+  /* 失焦边色 #dcdfe6；focus 时变 brand + 1px 浅绿 ring */
+  .zw-field {
+    height: 28px;
+    border-radius: 2px;
+    border: 1px solid #dcdfe6;
+    background: #ffffff;
+    padding: 0 10px;
+    color: #000000;
+    font-weight: 500;
+    font-size: 15px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+
+  .zw-field::placeholder {
+    color: #000000;
+  }
+
+  .zw-field:focus {
+    border-color: #00bf8a;
+    box-shadow: 0 0 0 1px #e6f9f3;
+  }
+
+  /* 芯片：用作小型筛选标签（「全部 / 日榜 / 周榜」之类的快选按钮） */
+  .zw-chip {
+    border-radius: 4px;
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    padding: 4px 10px;
+    color: #000000;
+    font-size: 15px;
+    font-weight: 500;
+    transition: border-color 0.2s, color 0.2s, background-color 0.2s;
+  }
+
+  .zw-chip:hover {
+    border-color: #00bf8a;
+    color: #00bf8a;
+  }
+
+  .zw-chip-active {
+    border-color: #00bf8a;
+    background: #e6f9f3;
+    color: #00bf8a;
+  }
+
+  /* 主操作按钮：纯绿底 28px */
+  .zw-primary-btn {
+    height: 28px;
+    border-radius: 2px;
+    background: #00bf8a;
+    padding: 0 16px;
+    color: #000000;
+    font-size: 15px;
+    line-height: 28px;
+    transition: background-color 0.2s;
+  }
+
+  .zw-primary-btn:hover {
+    background: #00a877;
+  }
+
+  /* 次操作按钮：白底 + 描边，hover 变绿 */
+  .zw-default-btn {
+    height: 28px;
+    border-radius: 2px;
+    border: 1px solid #dcdfe6;
+    background: #ffffff;
+    padding: 0 16px;
+    color: #000000;
+    font-size: 15px;
+    line-height: 26px;
+    transition: color 0.2s, border-color 0.2s;
+  }
+
+  .zw-default-btn:hover {
+    border-color: #00bf8a;
+    color: #00bf8a;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────
+ * 滚动条（浅色主题）—— 合并到 index.css 全局
+ * ───────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #86909c;
+}
+
+/* 进度条动画（评分卡用，可选） */
+@keyframes progress-fill {
+  from {
+    width: 0%;
+  }
+  to {
+    width: var(--target-width);
+  }
+}
+.progress-bar-animated {
+  animation: progress-fill 0.8s ease-out forwards;
+}

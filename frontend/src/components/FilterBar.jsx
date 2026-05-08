@@ -1,5 +1,5 @@
 import { Search, SlidersHorizontal } from "lucide-react";
-import { MultiSelectFilter, SelectFilter } from "./DropdownFilter";
+import { MultiSelectFilter } from "./DropdownFilter";
 
 // 语种代码 → 显示名称映射
 const LANG_LABEL = {
@@ -22,6 +22,12 @@ const PLATFORM_LABEL = {
   alphapolis: "Alphapolis",
   delitoon:   "Delitoon",
 };
+
+const RANK_TYPE_OPTIONS = [
+  { val: "daily",   label: "日榜" },
+  { val: "weekly",  label: "周榜" },
+  { val: "monthly", label: "月榜" },
+];
 
 export default function FilterBar({ filters, onChange, onSearch, platforms, langs, topTags }) {
   const platformOptions = (platforms || []).map((p) => ({
@@ -52,7 +58,7 @@ export default function FilterBar({ filters, onChange, onSearch, platforms, lang
       </div>
       <div className="grid grid-cols-1 gap-x-6 gap-y-3 lg:grid-cols-2 xl:grid-cols-4">
         {platformOptions.length > 0 && (
-          <SelectFilter
+          <MultiSelectFilter
             label="平台"
             options={platformOptions}
             value={filters.platform || ""}
@@ -61,7 +67,7 @@ export default function FilterBar({ filters, onChange, onSearch, platforms, lang
         )}
 
         {langOptions.length > 0 && (
-          <SelectFilter
+          <MultiSelectFilter
             label="语种"
             options={langOptions}
             value={filters.lang || ""}
@@ -69,13 +75,9 @@ export default function FilterBar({ filters, onChange, onSearch, platforms, lang
           />
         )}
 
-        <SelectFilter
+        <MultiSelectFilter
           label="榜单"
-          options={[
-            { val: "daily",   label: "日榜" },
-            { val: "weekly",  label: "周榜" },
-            { val: "monthly", label: "月榜" },
-          ]}
+          options={RANK_TYPE_OPTIONS}
           value={filters.rank_type || ""}
           onChange={(v) => onChange("rank_type", v)}
         />
