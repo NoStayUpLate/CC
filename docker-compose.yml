@@ -57,6 +57,16 @@ services:
     image: clickhouse/clickhouse-server:24-alpine
     container_name: novel_clickhouse
     restart: unless-stopped
+    # 阿里云 ECS 默认 seccomp 会拦 NUMA 相关 syscall（get_mempolicy / set_mempolicy / mbind），
+    # ClickHouse 24.x 启动时会卡在 libnuma 初始化无限刷 "Operation not permitted"。
+    # 放开 SYS_NICE / IPC_LOCK + seccomp=unconfined 让 NUMA 调用通过；
+    # 这些在单机部署里不带来额外攻击面，是 CH 官方推荐的容器化配置。
+    cap_add:
+      - SYS_NICE
+      - IPC_LOCK
+      - NET_ADMIN
+    security_opt:
+      - seccomp=unconfined
     environment:
       CLICKHOUSE_DB:                       ${CLICKHOUSE_DATABASE:-analysis}
       CLICKHOUSE_USER:                     ${CLICKHOUSE_USERNAME:-app}
