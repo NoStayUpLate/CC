@@ -19,6 +19,7 @@ import {
   ChevronDown,
   ChevronUp,
   LayoutDashboard,
+  Network,
   Sparkles,
   Trophy,
 } from "lucide-react";
@@ -63,8 +64,23 @@ const SECTION_TAGS = new Set([
 const TAB_DEFS = [
   { key: "overview", label: "数据概览", icon: LayoutDashboard },
   { key: "trend", label: "趋势洞察", icon: Sparkles },
+  { key: "correlation", label: "标签搭配", icon: Network },
   { key: "ranking", label: "表现榜单", icon: Trophy },
 ];
+
+// 主标签 → 同义词集合（中英混合数据里同一题材常见多种写法）。
+// 只用于"标签搭配" Tab 的主标签匹配；副标签照原文展示。
+const MAIN_TAG_GROUPS = [
+  { key: "狼人",     label: "狼人",     aliases: ["狼人", "werewolf", "alpha", "werewolf/alpha"] },
+  { key: "重生",     label: "重生",     aliases: ["重生", "rebirth", "reincarnation", "reborn", "regression"] },
+  { key: "复仇",     label: "复仇",     aliases: ["复仇", "revenge", "karma payback", "comeback"] },
+  { key: "恶役千金", label: "恶役千金", aliases: ["恶役千金", "villainess", "恶女"] },
+];
+const MAIN_ALIAS_LOOKUP = MAIN_TAG_GROUPS.map((g) => ({
+  key: g.key,
+  label: g.label,
+  aliasSet: new Set(g.aliases.map((a) => a.toLowerCase())),
+}));
 
 function platformColor(platform, idx = 0) {
   return PLATFORM_COLORS[platform] || FALLBACK_COLORS[idx % FALLBACK_COLORS.length];
@@ -188,7 +204,83 @@ function aggregate(rows) {
     .sort((a, b) => (b.heat_score || 0) - (a.heat_score || 0) || (a.rank_in_platform || 0) - (b.rank_in_platform || 0))
     .slice(0, 20);
 
-  return { total: rows.length, avgDhi, maxDhi: max, byPlatform, byRankType, topTags, heatmap, top };
+  // 标签搭配：4 个主标签各算一份
+  const correlations = {};
+  MAIN_ALIAS_LOOKUP.forEach((g) => {
+    correlations[g.key] = computeTagCorrelation(rows, g);
+  });
+
+  return { total: rows.length, avgDhi, maxDhi: max, byPlatform, byRankType, topTags, heatmap, top, correlations };
+}
+
+// ─────────────────────────────────────────────────────────────
+// 标签搭配聚合：找出含主标签的剧，按副标签分桶算 ΔDHI / Δ位置
+// 主标签匹配走 alias 集合（大小写不敏感）；副标签去重时用原文，
+// 但同主标签别名要剔除掉，避免"狼人"在自己身边出现 werewolf 节点。
+// ─────────────────────────────────────────────────────────────
+function computeTagCorrelation(rows, group) {
+  const matched = rows.filter((r) =>
+    (r.tags || []).some((t) => t && group.aliasSet.has(t.trim().toLowerCase()))
+  );
+  if (matched.length === 0) {
+    return { mainKey: group.key, label: group.label, baseline: null, combos: [] };
+  }
+
+  let sumDhi = 0;
+  let sumPos = 0;
+  let posCount = 0;
+  matched.forEach((r) => {
+    sumDhi += r.dhi || 0;
+    if (r.rank_in_platform && r.rank_in_platform > 0) {
+      sumPos += r.rank_in_platform;
+      posCount += 1;
+    }
+  });
+  const baseline = {
+    count: matched.length,
+    avgDhi: sumDhi / matched.length,
+    avgPos: posCount ? sumPos / posCount : null,
+  };
+
+  const comboMap = new Map();
+  matched.forEach((r) => {
+    (r.tags || []).forEach((rawTag) => {
+      if (!rawTag) return;
+      const tag = rawTag.trim();
+      if (!tag || SECTION_TAGS.has(tag)) return;
+      // 剔除主标签自身的所有别名，否则散点图里会出现"狼人 - werewolf"这种自指噪声
+      if (group.aliasSet.has(tag.toLowerCase())) return;
+      if (!comboMap.has(tag)) {
+        comboMap.set(tag, { tag, count: 0, sumDhi: 0, sumPos: 0, posCount: 0 });
+      }
+      const o = comboMap.get(tag);
+      o.count += 1;
+      o.sumDhi += r.dhi || 0;
+      if (r.rank_in_platform && r.rank_in_platform > 0) {
+        o.sumPos += r.rank_in_platform;
+        o.posCount += 1;
+      }
+    });
+  });
+
+  const combos = Array.from(comboMap.values())
+    .map((o) => {
+      const avgDhi = o.count ? o.sumDhi / o.count : 0;
+      const avgPos = o.posCount ? o.sumPos / o.posCount : null;
+      return {
+        tag: o.tag,
+        count: o.count,
+        avgDhi,
+        avgPos,
+        dhiDelta: avgDhi - baseline.avgDhi,
+        // 资源位数字越小越好；posDelta 用 baseline-combo，正值=组合让位置更靠前
+        posDelta:
+          baseline.avgPos !== null && avgPos !== null ? baseline.avgPos - avgPos : null,
+      };
+    })
+    .sort((a, b) => b.count - a.count);
+
+  return { mainKey: group.key, label: group.label, baseline, combos };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -275,6 +367,9 @@ export default function DramaInsights({ filters, queryVersion, onDramaClick }) {
 
           {!error && rows.length > 0 && activeTab === "overview" && <OverviewTab stats={stats} />}
           {!error && rows.length > 0 && activeTab === "trend" && <TrendTab stats={stats} />}
+          {!error && rows.length > 0 && activeTab === "correlation" && (
+            <CorrelationTab correlations={stats.correlations} />
+          )}
           {!error && rows.length > 0 && activeTab === "ranking" && (
             <RankingTab stats={stats} onDramaClick={onDramaClick} />
           )}
@@ -597,7 +692,291 @@ function PlatformRankHeatmap({ items }) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Tab 3: 表现榜单
+// Tab 3: 标签搭配（主标签 × 副标签 → DHI / 资源位变化）
+// ─────────────────────────────────────────────────────────────
+function CorrelationTab({ correlations }) {
+  // 默认选中第一个有数据的主标签，避免一进来就空状态
+  const firstWithData =
+    MAIN_ALIAS_LOOKUP.find((g) => correlations[g.key]?.baseline?.count > 0)?.key ||
+    MAIN_ALIAS_LOOKUP[0].key;
+  const [mainKey, setMainKey] = useState(firstWithData);
+  const data = correlations[mainKey];
+
+  return (
+    <div className="space-y-4">
+      <MainTagPicker selected={mainKey} onChange={setMainKey} correlations={correlations} />
+
+      {!data || !data.baseline ? (
+        <TabEmpty
+          text={`当前筛选下找不到含「${data?.label || mainKey}」的剧，换个主标签或调整筛选。`}
+        />
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+            <Kpi
+              label={`含「${data.label}」剧数`}
+              value={data.baseline.count}
+              suffix="部"
+              tone="primary"
+            />
+            <Kpi label="主标签平均 DHI" value={data.baseline.avgDhi.toFixed(1)} />
+            <Kpi
+              label="主标签平均资源位"
+              value={data.baseline.avgPos !== null ? `#${data.baseline.avgPos.toFixed(1)}` : "—"}
+            />
+          </div>
+
+          {data.combos.length === 0 ? (
+            <TabEmpty text={`含「${data.label}」的剧没有其他可对比的副标签。`} />
+          ) : (
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+              <div className="lg:col-span-2">
+                <ChartBlock
+                  title={`「${data.label}」搭配辐射图`}
+                  hint="中心 = 主标签，外圈节点 = 同框副标签。节点颜色越深 = 组合 DHI 越高；节点距中心越远 = 组合 DHI 比主标签单独时上升越多（向内则下降）；节点大小 = 同框次数；连线粗细 = 同框次数。"
+                >
+                  <TagConstellation mainLabel={data.label} combos={data.combos} />
+                </ChartBlock>
+              </div>
+              <div className="lg:col-span-3">
+                <ChartBlock
+                  title={`「${data.label}」搭配明细（按同框次数排序）`}
+                  hint="ΔDHI 绿色=该副标签同框时整体更热；Δ位置 ↑（绿色）= 同框时平均资源位更靠前（位置数字越小越好）；同框 1 部时数字仅供参考。"
+                >
+                  <ComboTable combos={data.combos} />
+                </ChartBlock>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function MainTagPicker({ selected, onChange, correlations }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-xs text-black opacity-70">主标签：</span>
+      {MAIN_ALIAS_LOOKUP.map((g) => {
+        const c = correlations[g.key]?.baseline?.count || 0;
+        const active = g.key === selected;
+        const disabled = c === 0;
+        return (
+          <button
+            key={g.key}
+            type="button"
+            onClick={() => !disabled && onChange(g.key)}
+            disabled={disabled}
+            title={disabled ? `当前筛选下无含「${g.label}」剧` : undefined}
+            className={`inline-flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs transition-colors
+              ${active
+                ? "border-brand bg-brand text-white"
+                : disabled
+                  ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-300"
+                  : "border-slate-200 bg-white text-black hover:border-brand hover:text-brand"
+              }`}
+          >
+            {g.label}
+            <span
+              className={`tabular-nums text-[10px] ${active ? "opacity-90" : "opacity-60"}`}
+            >
+              ×{c}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * 辐射图：把主标签放中心，前 10 个副标签按角度均布在外圈。
+ * - 角度：按 index 均匀分布（稳定布局，不会因数据微小变化抖动）
+ * - 半径：基础环 baseR + 由 dhiDelta 归一化后微调（±28px），ΔDHI 越大节点越外
+ * - 节点大小：随 count 线性放大
+ * - 节点颜色：组合平均 DHI 决定（沿用 heatColor 色阶）
+ * 用 SVG 自绘（recharts 没有合适的辐射 / 网络图原语）。
+ */
+function TagConstellation({ mainLabel, combos }) {
+  const top = combos.slice(0, 10);
+  if (top.length === 0) return <ChartEmpty />;
+
+  const W = 380;
+  const H = 380;
+  const cx = W / 2;
+  const cy = H / 2;
+  const baseR = 128;
+  const maxAbsDelta = Math.max(...top.map((c) => Math.abs(c.dhiDelta)), 1);
+  const maxCount = Math.max(...top.map((c) => c.count), 1);
+
+  const layout = top.map((c, i) => {
+    const angle = (Math.PI * 2 * i) / top.length - Math.PI / 2;
+    const r = baseR + (c.dhiDelta / maxAbsDelta) * 28;
+    return {
+      ...c,
+      x: cx + r * Math.cos(angle),
+      y: cy + r * Math.sin(angle),
+      nodeR: 14 + Math.min(10, (c.count / maxCount) * 10),
+      edgeW: Math.max(0.8, Math.min(3.5, (c.count / maxCount) * 3.5)),
+    };
+  });
+
+  return (
+    <div className="flex flex-col items-center">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-[420px]">
+        {/* baseline ring（参考圈：到这个圈表示组合 DHI 与主标签持平） */}
+        <circle cx={cx} cy={cy} r={baseR} fill="none" stroke="#e5e7eb" strokeDasharray="4 4" />
+
+        {/* 边 */}
+        {layout.map((c) => (
+          <line
+            key={`edge-${c.tag}`}
+            x1={cx}
+            y1={cy}
+            x2={c.x}
+            y2={c.y}
+            stroke="#cbd5e1"
+            strokeWidth={c.edgeW}
+            opacity={0.55}
+          />
+        ))}
+
+        {/* 节点 */}
+        {layout.map((c) => {
+          const fill = heatColor(c.avgDhi);
+          return (
+            <g key={`node-${c.tag}`}>
+              <title>
+                {`${c.tag}\n同框 ${c.count} 部 · 组合 DHI ${c.avgDhi.toFixed(1)} (${c.dhiDelta >= 0 ? "+" : ""}${c.dhiDelta.toFixed(1)})`}
+              </title>
+              <circle
+                cx={c.x}
+                cy={c.y}
+                r={c.nodeR}
+                fill={fill}
+                stroke="#00A877"
+                strokeWidth={1}
+                opacity={0.95}
+              />
+              <text
+                x={c.x}
+                y={c.y + 3}
+                textAnchor="middle"
+                fontSize={10}
+                fill="#000"
+                style={{ pointerEvents: "none" }}
+              >
+                {c.tag.length > 5 ? `${c.tag.slice(0, 5)}…` : c.tag}
+              </text>
+              <text
+                x={c.x}
+                y={c.y + c.nodeR + 11}
+                textAnchor="middle"
+                fontSize={9}
+                fill="#475569"
+                style={{ pointerEvents: "none" }}
+              >
+                ×{c.count}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* 中心主标签 */}
+        <circle cx={cx} cy={cy} r={36} fill="#00BF8A" stroke="#00A877" strokeWidth={1.5} />
+        <text
+          x={cx}
+          y={cy + 4}
+          textAnchor="middle"
+          fontSize={12}
+          fontWeight={700}
+          fill="#fff"
+          style={{ pointerEvents: "none" }}
+        >
+          {mainLabel.length > 4 ? `${mainLabel.slice(0, 4)}…` : mainLabel}
+        </text>
+      </svg>
+
+      <div className="mt-1 flex flex-wrap items-center justify-center gap-3 text-[10px] text-black opacity-70">
+        <span>← 内圈：组合 DHI 低于主标签</span>
+        <span>•</span>
+        <span>外圈 →：组合 DHI 高于主标签</span>
+      </div>
+    </div>
+  );
+}
+
+function ComboTable({ combos }) {
+  const items = combos.slice(0, 14);
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full text-xs text-black">
+        <thead className="bg-[#f7f8fa]">
+          <tr>
+            <th className="px-2 py-1.5 text-left font-semibold">搭配标签</th>
+            <th className="px-2 py-1.5 text-right font-semibold">同框</th>
+            <th className="px-2 py-1.5 text-right font-semibold">组合平均 DHI</th>
+            <th className="px-2 py-1.5 text-right font-semibold">Δ DHI</th>
+            <th className="px-2 py-1.5 text-right font-semibold">平均位置</th>
+            <th className="px-2 py-1.5 text-right font-semibold">Δ 位置</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((c) => {
+            const dhiPos = c.dhiDelta >= 0;
+            const posUp = c.posDelta !== null && c.posDelta >= 0;
+            return (
+              <tr key={c.tag} className="border-t border-[#ebeef5] hover:bg-[#fafbfc]">
+                <td className="px-2 py-1.5">
+                  <span
+                    className="inline-block rounded px-2 py-0.5 text-[11px]"
+                    style={{ background: heatColor(c.avgDhi), color: "#0f172a" }}
+                  >
+                    {c.tag}
+                  </span>
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums">×{c.count}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">{c.avgDhi.toFixed(1)}</td>
+                <td
+                  className={`px-2 py-1.5 text-right font-medium tabular-nums ${
+                    dhiPos ? "text-emerald-600" : "text-red-500"
+                  }`}
+                >
+                  {dhiPos ? "+" : ""}
+                  {c.dhiDelta.toFixed(1)}
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums">
+                  {c.avgPos !== null ? `#${c.avgPos.toFixed(1)}` : "—"}
+                </td>
+                <td
+                  className={`px-2 py-1.5 text-right font-medium tabular-nums ${
+                    c.posDelta === null ? "" : posUp ? "text-emerald-600" : "text-red-500"
+                  }`}
+                >
+                  {c.posDelta === null
+                    ? "—"
+                    : posUp
+                      ? `↑ ${c.posDelta.toFixed(1)}`
+                      : `↓ ${Math.abs(c.posDelta).toFixed(1)}`}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {combos.length > items.length && (
+        <div className="mt-2 text-right text-[10px] text-black opacity-60">
+          仅显示前 {items.length} 项（共 {combos.length} 个搭配标签）
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Tab 4: 表现榜单
 // ─────────────────────────────────────────────────────────────
 function RankingTab({ stats, onDramaClick }) {
   const items = stats.top;
