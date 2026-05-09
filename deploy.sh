@@ -163,15 +163,20 @@ cmd_status() {
 
     # HTTP-only 部署，没有 Caddy / 域名；提示用户用 服务器公网 IP 访问
     echo ""
-    local public_ip
+    local public_ip http_port port_suffix
     public_ip="$(curl -s --max-time 3 ifconfig.me 2>/dev/null || true)"
+    http_port="$(grep -E '^HOST_HTTP_PORT=' "$ENV_FILE" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '\r"\047 ')"
+    http_port="${http_port:-80}"
+    port_suffix=""
+    [[ "$http_port" != "80" ]] && port_suffix=":$http_port"
+
     if [[ -n "$public_ip" ]]; then
-        log "访问地址：${C_GREEN}http://${public_ip}${C_RESET}"
+        log "访问地址：${C_GREEN}http://${public_ip}${port_suffix}${C_RESET}"
     else
-        log "访问地址：${C_GREEN}http://<本机公网IP>${C_RESET}"
+        log "访问地址：${C_GREEN}http://<本机公网IP>${port_suffix}${C_RESET}"
     fi
     printf '%s' "$C_DIM"
-    echo "  HTTP-only 模式，请确认安全组 80 端口已放开。"
+    echo "  HTTP-only 模式，请确认安全组 ${http_port} 端口已放开。"
     echo "  需要 HTTPS / 自签证书时再加回 Caddy（参考 git 历史 docker-compose.yml）。"
     printf '%s' "$C_RESET"
 }
