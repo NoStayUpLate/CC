@@ -6,7 +6,7 @@
 #   ./deploy.sh down       停止全部容器
 #   ./deploy.sh restart    down + up
 #   ./deploy.sh status     展示运行状态 + 健康检查
-#   ./deploy.sh logs [svc] 跟随日志（默认全部，可指定 backend / frontend / caddy）
+#   ./deploy.sh logs [svc] 跟随日志（默认全部，可指定 backend / frontend）
 #   ./deploy.sh update     git pull → 重建镜像 → 启动 → 清理悬挂镜像
 #   ./deploy.sh secret     生成一个 JWT_SECRET 并打印
 #   ./deploy.sh help       使用说明
@@ -14,7 +14,8 @@
 # 使用前置条件:
 #   - 已安装 docker + docker compose v2（apt/yum 装 docker-ce 自带）
 #   - 项目根目录有 .env.production（可从 .env.production.example 复制后填）
-#   - DOMAIN 的 A 记录已指向本机公网 IP（Caddy 才能签 LE 证书）
+#
+# 当前部署形态：HTTP-only（直接 http://<服务器公网IP>）；DuckDB 嵌入式不需要外部 DB。
 
 set -euo pipefail
 
@@ -77,8 +78,9 @@ check_env() {
     fi
 
     # 加载变量并校验关键项（注意：=右侧含 $/" 的不安全 source，所以用 grep + 自行解析）
+    # 轻量化版本只剩 JWT_SECRET 必填；DuckDB 不需要密码 / host；HTTP-only 不需要 DOMAIN
     local missing=()
-    for key in DOMAIN JWT_SECRET CLICKHOUSE_HOST CLICKHOUSE_PASSWORD; do
+    for key in JWT_SECRET; do
         local val
         val="$(grep -E "^${key}=" "$ENV_FILE" | tail -n1 | cut -d= -f2- || true)"
         # 去掉首尾引号与空格
@@ -120,7 +122,7 @@ check_env() {
 cmd_up() {
     check_docker
     check_env
-    log "构建并启动容器（首次会拉镜像、装 Playwright，约 5-10 分钟）..."
+    log "构建并启动容器（轻量化镜像，1-3 分钟；首次拉 base image 视网络而定）..."
     "${COMPOSE[@]}" --env-file "$ENV_FILE" up -d --build --remove-orphans
     ok "容器已启动，等待健康检查..."
     sleep 3
@@ -156,16 +158,19 @@ cmd_status() {
         warn "frontend nginx   → 异常或未就绪"
     fi
 
-    local domain
-    domain="$(grep -E '^DOMAIN=' "$ENV_FILE" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '\r"\047 ' || true)"
-    if [[ -n "$domain" ]]; then
-        echo ""
-        log "访问地址：${C_GREEN}https://${domain}${C_RESET}"
-        printf '%s' "$C_DIM"
-        echo "  首次访问应自动跳到 HTTPS，Caddy 自动签 Let's Encrypt 证书；"
-        echo "  如证书签发失败，先确认 ${domain} 的 A 记录指向本机公网 IP，且 80/443 安全组放开。"
-        printf '%s' "$C_RESET"
+    # HTTP-only 部署，没有 Caddy / 域名；提示用户用 服务器公网 IP 访问
+    echo ""
+    local public_ip
+    public_ip="$(curl -s --max-time 3 ifconfig.me 2>/dev/null || true)"
+    if [[ -n "$public_ip" ]]; then
+        log "访问地址：${C_GREEN}http://${public_ip}${C_RESET}"
+    else
+        log "访问地址：${C_GREEN}http://<本机公网IP>${C_RESET}"
     fi
+    printf '%s' "$C_DIM"
+    echo "  HTTP-only 模式，请确认安全组 80 端口已放开。"
+    echo "  需要 HTTPS / 自签证书时再加回 Caddy（参考 git 历史 docker-compose.yml）。"
+    printf '%s' "$C_RESET"
 }
 
 cmd_logs() {
@@ -231,7 +236,7 @@ $(printf '%s' "$C_BLUE")海外内容监测看板 — 服务器运维脚本$(prin
   $(printf '%s' "$C_GREEN")down$(printf '%s' "$C_RESET")        停止所有容器（保留数据卷）
   $(printf '%s' "$C_GREEN")restart$(printf '%s' "$C_RESET")     down + up
   $(printf '%s' "$C_GREEN")status$(printf '%s' "$C_RESET")      展示运行状态 + /health 健康检查
-  $(printf '%s' "$C_GREEN")logs$(printf '%s' "$C_RESET") [svc]  跟随日志，svc ∈ {backend, frontend, caddy}
+  $(printf '%s' "$C_GREEN")logs$(printf '%s' "$C_RESET") [svc]  跟随日志，svc ∈ {backend, frontend}
   $(printf '%s' "$C_GREEN")update$(printf '%s' "$C_RESET")      git pull → 重建镜像 → 平滑重启 → 清理
   $(printf '%s' "$C_GREEN")secret$(printf '%s' "$C_RESET")      生成 JWT_SECRET（粘到 .env.production）
   $(printf '%s' "$C_GREEN")help$(printf '%s' "$C_RESET")        显示本说明
@@ -239,7 +244,7 @@ $(printf '%s' "$C_BLUE")海外内容监测看板 — 服务器运维脚本$(prin
 首次部署流程:
   1) cp .env.production.example .env.production
   2) ./deploy.sh secret              # 复制输出粘到 JWT_SECRET=
-  3) vim .env.production             # 填 DOMAIN / CLICKHOUSE_* / AUTH_USERS 等
+  3) vim .env.production             # 填 JWT_SECRET / AUTH_BACKEND / REGISTRATION_CODE 等
   4) ./deploy.sh up
 
 日常更新:

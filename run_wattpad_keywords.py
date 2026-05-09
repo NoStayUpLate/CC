@@ -1,13 +1,18 @@
 """
 Wattpad 词云数据填充脚本（独立运行，无需容器）
 
+⚠️ 注意：本脚本停留在 ClickHouse 时代，项目已切换到 DuckDB 嵌入式数据库。
+   再用之前需要把 ch_exec / kw_to_ch_map 改成调用 backend.database.batch_insert
+   或直接 duckdb.connect(DUCKDB_PATH) 跑 UPDATE。
+   保留这份代码是为了不丢失分词逻辑（_STOPWORDS / extract_keywords / fetch_chapter_keywords）。
+
 流程：
   1. 调 Wattpad API 拿小说列表（前 N 本）
   2. 对每本：用 parts API 拿前三章 URL → 抓阅读页 → 提取 data-p-id 正文
   3. Counter 分词 → top_keywords
-  4. 通过 ClickHouse HTTP API 更新数据库
+  4. （旧）通过 ClickHouse HTTP API 更新数据库 — 已失效，改造前不要直接跑
 
-运行方式：
+运行方式（改造后）：
   python run_wattpad_keywords.py
 """
 import re

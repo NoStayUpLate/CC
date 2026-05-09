@@ -7,16 +7,21 @@
 
 ## 1. 项目一览
 
-海外**小说 + 短剧**监测看板，FastAPI + ClickHouse + React/Vite。
+海外**小说 + 短剧**监测看板，FastAPI + DuckDB（嵌入式）+ React/Vite。
 
 数据流：
 ```
-scraper(list[dict]) → service(batch_insert) → ClickHouse → SQL 内算 GHI(小说) / DHI(短剧) → React 展示
+scraper(list[dict]) → service(batch_insert) → DuckDB → SQL 内算 GHI(小说) / DHI(短剧) → React 展示
 ```
 
-- 小说：GHI / S_popular / S_engage / S_adapt / has_hook **全部在 ClickHouse 查询层算**
-- 短剧：DHI / S_tag / S_position / S_recency **全部在 ClickHouse 查询层算**（不入表，每次 SELECT 时叠加）
+- 小说：GHI / S_popular / S_engage / S_adapt / has_hook **全部在 DuckDB 查询层算**
+- 短剧：DHI / S_tag / S_position / S_recency **全部在 DuckDB 查询层算**（不入表，每次 SELECT 时叠加）
 - 前端只做展示，不要重算分数
+
+> **历史**：之前是 ClickHouse 同栈部署，1C2G 服务器跑不动（CH 24.x 默认要 600MB+ 内存），
+> 数据量又小（万级行），所以换成了 DuckDB 嵌入式（commit `feat: ClickHouse → DuckDB`）。
+> CH 时代的 SQL 方言（`if/multiIf/positionCaseInsensitive/toFloat64/arrayJoin`）已全部
+> 改写成 DuckDB 标准语法（`CASE WHEN/lower(s) LIKE/::DOUBLE/coalesce/unnest`）。
 
 ---
 
@@ -37,8 +42,8 @@ scraper(list[dict]) → service(batch_insert) → ClickHouse → SQL 内算 GHI(
 | [frontend/src/App.jsx](frontend/src/App.jsx) | 顶层 Auth Gate + Dashboard（React 18 + Vite + Tailwind） |
 | [frontend/src/api/client.js](frontend/src/api/client.js) | 前端唯一 HTTP 客户端（`credentials: 'include'` + 401 拦截） |
 | [frontend/src/hooks/useAuth.js](frontend/src/hooks/useAuth.js) / [components/LoginPage.jsx](frontend/src/components/LoginPage.jsx) | 全局鉴权 hook + 登录页 |
-| [docker-compose.yml](docker-compose.yml) / [docker-compose.dev.yml](docker-compose.dev.yml) / [Caddyfile](Caddyfile) | 生产 compose（Caddy→nginx→backend→**clickhouse 同栈**）/ 本地 dev override / Caddy HTTPS 配置 |
-| [.env.production.example](.env.production.example) | 上云所需环境变量样例（JWT_SECRET / AUTH_USERS / DOMAIN / CLICKHOUSE_PASSWORD 等） |
+| [docker-compose.yml](docker-compose.yml) / [docker-compose.dev.yml](docker-compose.dev.yml) / [Caddyfile](Caddyfile) | 生产 compose（**轻量化**：nginx→backend，DuckDB 嵌入式）/ 本地 dev override / Caddyfile 留作未来加 HTTPS 时复用 |
+| [.env.production.example](.env.production.example) | 上云所需环境变量样例（JWT_SECRET / AUTH_BACKEND / REGISTRATION_CODE / COOKIE_SECURE 等；不再需要 CLICKHOUSE_*） |
 | [deploy.sh](deploy.sh) | 服务器一键运维脚本（up / down / restart / logs / status / update / secret） |
 | **`zhangwan-ui/`** | ⚠️ **独立 Vue 3 设计系统资源，与本项目无关，禁止改动** |
 | [run_wattpad_keywords.py](run_wattpad_keywords.py) | 一次性脚本（关键词回填），不是定时任务；连接信息走环境变量，缺失会 fail-fast |
@@ -77,16 +82,16 @@ open http://localhost:8000/docs
 
 1. **数据缺失统一返回 `None`**，禁止用 `0` / `""` 占位 — 会被 GHI / DHI 当真实值参与排名。`base_scraper._safe_int_or_none()` 已封装好。
 2. **小说 → `novels` 表 / 短剧 → `dramas` 表，禁止混表**。
-3. **GHI（小说）/ DHI（短剧）必须在 ClickHouse SQL 内计算**，前端只做展示。不要在 React 里重算分数。GHI 模板在 [`backend/routers/novels.py`](backend/routers/novels.py)，DHI 模板在 [`backend/routers/dramas.py`](backend/routers/dramas.py) 的 `_DHI_SQL_TEMPLATE`。
-4. **新增 ClickHouse 字段必须四处同步**：[`database.py`](backend/database.py) 的 DDL + `_MIGRATE_SQL` + `_INSERT_COLUMNS`(或 `_DRAMA_INSERT_COLUMNS`) + [`models.py`](backend/models.py)。漏一处就会整批写入失败。
+3. **GHI（小说）/ DHI（短剧）必须在 DuckDB SQL 内计算**，前端只做展示。不要在 React 里重算分数。GHI 模板在 [`backend/routers/novels.py`](backend/routers/novels.py) 的 `_GHI_SQL_BASE`，DHI 模板在 [`backend/routers/dramas.py`](backend/routers/dramas.py) 的 `_DHI_SQL_BASE`。
+4. **新增 DuckDB 字段必须三处同步**：[`database.py`](backend/database.py) 的 `_CREATE_*_SQL` DDL + 对应 `_INSERT_*_SQL` 占位符 + [`models.py`](backend/models.py) 的 Pydantic 行结构。漏一处就会整批写入失败。
 5. **scraper 必须继承三件套之一**：`BaseHttpScraper` / `BasePlaywrightScraper` / `BaseShortDramaScraper`。**禁止** scraper 里直接 `requests.get()` —— 会丢失重试和代理回退。
-6. **scraper 只 `return list[dict]`**，不直接连 ClickHouse；写入由 `services/*scraper_service.py` 负责。
-7. **ClickHouse 客户端必须 `autogenerate_session_id=False`**，并发请求每次用 `database.get_client()` 取独立 client，不要做模块级单例。
+6. **scraper 只 `return list[dict]`**，不直接连数据库；写入由 `services/*scraper_service.py` 负责。
+7. **DuckDB 连接是模块级共享单例**（`database.get_client()` 内部加 `_lock` 串行化），单文件不允许多进程同时写入，单进程多线程靠应用层锁保护。**不要绕过 lock 直接 `duckdb.connect(path)` 第二次**。
 8. **Playwright 浏览器生命周期由 `BasePlaywrightScraper.scrape()` 管理**，子类如需二次抓取（章节正文等），必须覆盖 `_enrich_results(context, results)` 复用已打开的 `BrowserContext`。
 9. **GHI / DHI 标签清单**改动会直接影响排名，必须先和用户确认：
    - 小说：`_calc_s_adapt` 阈值 / `_S_TAGS` / `_A_TAGS` 在 [`backend/scrapers/base_scraper.py`](backend/scrapers/base_scraper.py)
    - 短剧：`_S_TAGS_DRAMA` / `_A_TAGS_DRAMA` 在 [`backend/routers/dramas.py`](backend/routers/dramas.py)（DHI 是 SQL 内算的，改完重启后端立即生效，**无需重抓**）
-10. **真实数据库密码 / `.env` 内容**禁止写进任何文档或提交到仓库。
+10. **真实凭据 / `.env` 内容**禁止写进任何文档或提交到仓库（DuckDB 嵌入式不再有 DB 密码，但 JWT_SECRET / REGISTRATION_CODE 仍是秘密）。
 11. **新业务 router 必须挂在 `Depends(require_user)` 下**（[`backend/main.py`](backend/main.py) 用 `_protected` 列表统一注入），裸出业务接口等同 P0 故障。
 12. **JWT_SECRET 不能为空**：[`backend/main.py`](backend/main.py) 启动时 fail-fast；本地用 `openssl rand -hex 32` 生成写入 `backend/.env`。
 13. **`COOKIE_SECURE` 必须与传输协议匹配**：HTTPS=true，HTTP=false。改一边记得改另一边的 `.env`，否则浏览器拒种 cookie，登录后立即被推回登录页。
@@ -94,7 +99,7 @@ open http://localhost:8000/docs
 15. **SQLite 用户库 `auth_users.db` 不进仓库**（`.gitignore` 已排除），生产容器挂在 `/data` 持久卷。
 16. **自助注册仅在 `AUTH_BACKEND=sqlite` 且 `REGISTRATION_CODE` 非空时启用**。`POST /api/auth/register` 同时校验：邀请码精确匹配、用户名 `^[A-Za-z0-9_]{3,32}$`、密码 ≥6 位、用户名未被占用；成功后直接种 cookie 自动登录。前端通过 `GET /api/auth/config` 决定是否展示注册入口。
 17. **`REGISTRATION_CODE` 视同生产秘密**，禁止写进文档 / 仓库 / 默认 example；改邀请码立即作废历史邀请。
-18. **后端 Dockerfile 镜像源**（apt → mirrors.aliyun.com / pip → 阿里云 / Playwright → npmmirror）是**国内 ECS 构建必需**，删掉等于让构建从 10 分钟变 7 小时。海外服务器构建可临时还原，但 PR 不要合回主分支。
+18. **后端 Dockerfile 镜像源**（apt → mirrors.aliyun.com / pip → 阿里云 / Playwright → npmmirror）是**国内 ECS 构建必需**，删掉等于让构建从 1-3 分钟变 7 小时。海外服务器构建可临时还原，但 PR 不要合回主分支。**Chromium 安装由 `INSTALL_PLAYWRIGHT_CHROMIUM` build-arg 控制**，生产 1C2G 节点默认 false，跨境抓不到、不装；本地 dev / 海外节点跑爬虫前要 `--build-arg INSTALL_PLAYWRIGHT_CHROMIUM=true` 重 build。
 19. **Skill 索引**只列入口（详细流程在 SKILL.md 内）；新增项目级 skill 在 [.claude/skills/](.claude/skills/) 下建子目录，不要塞 `.claude/settings.local.json`（用户私有，已 gitignore）。
 20. **任何配置/凭据相关文件改动后**走完[`project-hardening` skill](.claude/skills/project-hardening/SKILL.md) 的 Step 1 secrets 扫描再 push，避免泄密。
 

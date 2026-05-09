@@ -1,6 +1,6 @@
 fastapi==0.111.0
 uvicorn==0.29.0
-clickhouse-connect>=0.7.16
+duckdb>=1.0
 playwright==1.44.0
 pydantic>=2.7.1
 pydantic-settings>=2.2.1

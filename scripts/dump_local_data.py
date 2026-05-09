@@ -1,4 +1,7 @@
 """
+⚠️ 已废弃：项目从 ClickHouse 切到 DuckDB 嵌入式后，迁移就是直接 cp dashboard.duckdb 到服务器卷里。
+   保留本脚本仅为历史记录；它依赖 ClickHouse HTTP API，没有 ClickHouse 服务时跑不通。
+
 本地 ClickHouse → seed dump 文件（跨平台，Windows 直接 python 跑）。
 
 从 backend/.env 读连接信息（CLICKHOUSE_HOST / PORT / DATABASE / USERNAME / PASSWORD），

@@ -4,11 +4,14 @@
 # 改动：
 #   - 后端暴露 8000 到宿主机，方便本地直接 curl
 #   - 前端改回 vite dev（HMR），不走 nginx 镜像
-#   - 不启动 caddy（dev 不需要 HTTPS）
 #   - COOKIE_SECURE=false（HTTP 下浏览器才接受 cookie）
 
 services:
   backend:
+    # dev 容器需要装 Chromium 才能跑爬虫
+    build:
+      args:
+        INSTALL_PLAYWRIGHT_CHROMIUM: "true"
     ports:
       - "8000:8000"
     environment:
@@ -28,6 +31,3 @@ services:
     ports:
       - "5173:5173"
     expose: !reset []
-
-  caddy:
-    profiles: ["disabled"]   # dev 模式不启 caddy

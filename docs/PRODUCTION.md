@@ -43,26 +43,25 @@
 | 路径 | `/opt/CC` |
 | GitHub | `https://github.com/NoStayUpLate/CC.git` |
 | 主分支 | `main` |
-| 部署方式 | Docker Compose（`docker-compose.yml` 同栈部署 backend + frontend + caddy + clickhouse） |
+| 部署方式 | Docker Compose（瘦身后：backend + frontend；DuckDB 走嵌入式无独立容器） |
 
 **更新流程**：本地改 → push → 服务器 `cd /opt/CC && ./deploy.sh update`
 
 ---
 
-## 4. 运行中的容器（4 个）
+## 4. 运行中的容器（2 个，瘦身后）
 
 | 容器名 | 镜像 | 容器内端口 | 宿主映射 | 角色 |
 |--------|------|----------|---------|------|
-| `novel_caddy` | `caddy:2-alpine` | 80 / 443 | `0.0.0.0:80→80` / `0.0.0.0:443→443` | 反向代理（**当前 HTTP-only 模式**） |
-| `novel_frontend` | `cc-frontend`（本地构建） | 80 | 仅内网 | nginx + React build 静态托管 + `/api` 反代 |
-| `novel_backend` | `cc-backend`（本地构建） | 8000 | 仅内网 | FastAPI + Playwright + APScheduler |
-| `novel_clickhouse` | `clickhouse/clickhouse-server:24-alpine` | 8123 / 9000 | 仅内网 | 数据库（**同栈部署**，非外部） |
+| `novel_frontend` | `cc-frontend`（本地构建） | 80 | `0.0.0.0:80→80` | nginx + React build 静态托管 + `/api` 反代 |
+| `novel_backend` | `cc-backend`（本地构建） | 8000 | 仅 compose 内网 | FastAPI + DuckDB（嵌入式）+ APScheduler；默认不装 Chromium |
+
+> 历史上还有 `novel_caddy`（反代）+ `novel_clickhouse`（数据库），1C2G 服务器上跑不动，已下线 —
+> Caddy 在 HTTP-only 模式下属于空转；ClickHouse 24.x 默认要 600MB+ 内存，换成 DuckDB 嵌入式后省到 ~50MB。
+> 需要 HTTPS 时再把 Caddy 加回 compose（`Caddyfile` 仍在仓库里）。
 
 **Docker 卷（数据持久化）**：
-- `backend_data` — 装 SQLite 用户库 `auth_users.db`
-- `clickhouse_data` — ClickHouse 数据
-- `clickhouse_logs` — ClickHouse 日志
-- `caddy_data` / `caddy_config` — Caddy 自动签证书的状态（HTTP 模式下基本为空）
+- `backend_data` — SQLite 用户库 `auth_users.db` **+ DuckDB 数据库 `dashboard.duckdb`**（同卷下两个文件）
 
 ---
 
@@ -70,13 +69,15 @@
 
 | 文件 | 内容 | 是否在 git |
 |------|------|----------|
-| `/opt/CC/.env.production` | 所有真凭据（JWT_SECRET / CLICKHOUSE_PASSWORD / REGISTRATION_CODE / ...） | ❌ gitignore |
-| `/opt/CC/Caddyfile` | Caddy 配置，**当前已临时改为 `:80 {`** 而非 `{$DOMAIN} {` | ✓ 在 git，但服务器上的修改未提交 |
-| `/opt/CC/docker-compose.yml` | 主 compose | ✓ |
+| `/opt/CC/.env.production` | JWT_SECRET / REGISTRATION_CODE 等真凭据 | ❌ gitignore |
+| `/opt/CC/docker-compose.yml` | 主 compose（瘦身后只剩 backend / frontend） | ✓ |
 | `/opt/CC/deploy.sh` | 一键运维入口 | ✓ |
+| `/opt/CC/Caddyfile` | Caddy 配置，**当前未启用**；将来要加 HTTPS 时把 Caddy 服务加回 compose 即可 | ✓ |
+| `/opt/CC/.../dashboard.duckdb` | DuckDB 数据库文件，**容器内** `/data/dashboard.duckdb`，挂在 `backend_data` 卷 | ❌ 持久卷 |
 | `/root/cc-secrets.txt` | 部署时生成的凭据备份（仅 root 可读） | ❌ 仅服务器 |
 
-> ⚠️ **Caddyfile 已被本地修改**：`sed -i 's|{$DOMAIN} {|:80 {|' Caddyfile`。下次 `git pull` 如果远端 Caddyfile 有改动会冲突，处理时优先保留本地的 `:80 {`，或者先决定要不要切回域名 + HTTPS 模式。
+> ⚠️ 历史上服务器侧 Caddyfile 被 `sed` 改成过 `:80 {` 模式以便 HTTP-only 部署。瘦身后 Caddy 不再启用，
+> 这个本地改动可以丢弃 / 还原；以后如果重新加 Caddy 上 HTTPS，记得把 Caddyfile 改回 `{$DOMAIN} {` 模板。
 
 ---
 
@@ -98,8 +99,8 @@
 | 限制 | 影响 | 可选解决方向 |
 |------|------|------------|
 | **国内节点出口几乎不可达境外**（实测 Wattpad、Cloudflare 1.1.1.1 都 10s 超时） | 爬虫无法抓任何数据 | A) 换香港/新加坡 ECS（推荐长期）<br>B) 接 HTTP/SOCKS5 代理（短期，有合规风险）<br>C) 塞本地 dump 数据先验收 UI |
-| 无域名 | 无 HTTPS / Caddy 走 :80 / 浏览器经常自动升级 https 导致访问失败 | 买域名后改回 `Caddyfile` 的 `{$DOMAIN} {` 模式 + `.env` 的 `COOKIE_SECURE=true` |
-| 数据库为空 | 看板进了登录但无数据 | 同上，或塞 dump |
+| 无域名 | 无 HTTPS，浏览器有时自动升级 https 导致访问失败 | 买域名后把 Caddy 加回 `docker-compose.yml`（参考 git 历史 `b73126f` 之前的版本） + `.env` 改 `COOKIE_SECURE=true` |
+| 数据库为空 | 看板进了登录但无数据 | 同上，或本地 dump duckdb 文件 scp 到服务器卷里（卷路径：`docker volume inspect cc_backend_data`） |
 
 ---
 
@@ -122,9 +123,9 @@
 # 查看后端容器实际拿到的环境变量（注意必须带 --env-file）
 docker compose --env-file .env.production exec backend env | grep COOKIE
 
-# 进 ClickHouse 客户端交互查询
-docker compose --env-file .env.production exec clickhouse \
-  clickhouse-client --user app --password "$(grep ^CLICKHOUSE_PASSWORD /opt/CC/.env.production | cut -d= -f2)"
+# 进 DuckDB 交互查询（嵌入式，没独立容器，直接进 backend 容器跑 python 起 cli）
+docker compose --env-file .env.production exec backend \
+  python -c "import duckdb; con=duckdb.connect('/data/dashboard.duckdb'); print(con.execute('SELECT count(*) FROM novels').fetchone(), con.execute('SELECT count(*) FROM dramas').fetchone())"
 
 # 查注册邀请码
 grep REGISTRATION_CODE /opt/CC/.env.production
@@ -147,7 +148,9 @@ docker compose --env-file .env.production exec backend python -m auth.cli add-us
 5. **COOKIE_SECURE 写死 "true"** → 改用 `${COOKIE_SECURE:-true}` + .env.production.example 补 `COOKIE_SECURE=true` 默认行
 6. **`.env.production.example` 漏 COOKIE_SECURE 行** → sed 替换没匹配到，导致用户配置不生效，已修
 7. **浏览器 HSTS 自动升级 HTTPS** → 教用户用无痕窗口或关 Edge 的"自动 HTTPS"
-8. **跨境网络限制** → 当前未解决，是项目最大瓶颈
+8. **跨境网络限制** → 当前未解决，是项目最大瓶颈（生产 backend 默认不装 Chromium，因为爬虫跨境跑也是失败循环）
+9. **ClickHouse 在阿里云 ECS 上 NUMA syscall 被 seccomp 拦** → 起初加 `cap_add: SYS_NICE / IPC_LOCK` + `seccomp=unconfined` 解决；后来直接换 DuckDB 嵌入式，问题不复存在
+10. **1C2G 内存不够** → 整体瘦身：CH→DuckDB（省 600MB）+ 去掉 Caddy（省 30MB）+ 默认不装 Chromium（省 300MB 内存 + 700MB 镜像）
 
 ---
 

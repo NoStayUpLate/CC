@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# ⚠️ 已废弃：项目从 ClickHouse 切到 DuckDB 嵌入式后，迁移就是 docker cp dashboard.duckdb 到
+#    backend_data 卷里。保留本脚本仅为历史记录，不要再跑。
+#
 # 服务器侧灌入本地 dump 到同栈 ClickHouse 容器。
 # 在项目根目录运行（与 docker-compose.yml 同级），ClickHouse 容器须已 healthy。
 #
