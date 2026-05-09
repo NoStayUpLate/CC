@@ -227,7 +227,7 @@ function StatCard({ label, value, hint }) {
     <div className="rounded-sm border border-[#ebeef5] bg-white px-4 py-3">
       <div className="text-[11px] text-slate-500">{label}</div>
       <div className="mt-0.5 flex items-baseline gap-2">
-        <span className="text-xl font-semibold text-black tabular-nums">{value}</span>
+        <span className="text-lg font-semibold text-black tabular-nums">{value}</span>
         {hint && <span className="text-[11px] text-slate-400">{hint}</span>}
       </div>
     </div>
@@ -375,7 +375,7 @@ export default function ScrapeOverviewPage() {
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
             <Activity size={16} strokeWidth={1.7} className="text-brand" />
-            <h1 className="text-sm font-semibold text-black">数据抓取概览</h1>
+            <h1 className="text-xs font-semibold text-black">数据抓取概览</h1>
           </div>
           <span className="hidden text-xs text-slate-500 sm:inline">
             执行时间 <span className="text-black">{cronTime}</span>
@@ -410,7 +410,7 @@ export default function ScrapeOverviewPage() {
 
       {/* 错误态 */}
       {error && (
-        <div className="rounded-sm border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-sm border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">
           加载失败：{error}
           <button onClick={load} className="ml-3 rounded border border-red-200 bg-white px-2 py-0.5 text-xs hover:bg-red-50">
             重试
@@ -442,7 +442,7 @@ export default function ScrapeOverviewPage() {
                 <SkeletonRows />
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-sm text-slate-500">
+                  <td colSpan={9} className="py-12 text-center text-xs text-slate-500">
                     暂无平台数据
                   </td>
                 </tr>

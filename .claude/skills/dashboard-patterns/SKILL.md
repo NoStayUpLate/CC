@@ -1,4 +1,4 @@
----
+﻿---
 name: dashboard-patterns
 description: |
   【React + Tailwind 看板设计模式】把一套筛选器 / 悬浮提示 / 折叠可视化 / 右侧抽屉 / 表格-分页-状态按钮 / 布局骨架的口径统一抽出，便于在本项目沿用、也便于复制到其他 React + Tailwind 项目。
@@ -100,6 +100,31 @@ description: |
 
 ⚠️ 注意：`text-xs` 现在等于 `text-base` 默认值（16px），`text-sm` 等于 `text-lg` 默认值（18px）。若需要明显的尺寸层级请直接用 `text-base / text-lg / text-xl`，不要依赖 sm/base 之间的视觉差异。
 
+### 字号层级方法论（设计原则）
+
+**永远按"功能定位"分档，不按 Tailwind class 名顺手选**。一张看板上至少要让以下三档清晰可辨，**任何相邻两档差至少 2px**：
+
+| 角色 | 推荐 class | 实际像素 | 备注 |
+|------|----------|----------|------|
+| KPI 主数字 / 视觉锚点 | `text-xl` / `text-2xl` | 20–24 | 必须显著大于卡片标题，建立焦点 |
+| 卡片 / 图表 主标题 | `text-sm` 或 `text-base` | 18 / 16 | 与下方 hint 至少 2px 落差 |
+| 标签 / 说明文（KPI label / chart hint） | `text-xs` | 16 | 卡片正文级别的可读性下限 |
+| 微注释（tooltip 副字、芯片、徽章、爬虫状态点说明） | `text-[11px]` | 11 | 仅用于 chip / 弱注释，**不要用在卡片正文级 label** |
+
+**最常见的反模式**：把"卡片标题"和"卡片副标题（hint）"挤到同一档（例如都 `text-xs`），层级被压平、卡片读起来全是平的。本仓库 [DramaInsights.jsx](frontend/src/components/DramaInsights.jsx) `Kpi` / `ChartBlock` 是范本：
+
+```jsx
+// Kpi
+<div className="text-xs ...">{label}</div>          {/* 16px */}
+<div className="text-xl font-bold tabular-nums">    {/* 20px — 锚点 */}
+
+// ChartBlock
+<div className="text-sm font-semibold ...">{title}</div>  {/* 18px — 卡片主标题 */}
+<div className="text-xs opacity-70">{hint}</div>          {/* 16px — 说明，与标题 2px 落差 */}
+```
+
+⛔ 禁止把卡片正文级 label 压到 `text-[11px]`（11px）—— 那是为芯片 / 徽章保留的微字号，用错会让 KPI 标签像水印一样看不清。
+
 ### Lucide 图标使用规约
 
 ```jsx
@@ -122,15 +147,20 @@ description: |
 ### 🧱 骨架
 
 ```jsx
+const [siderCollapsed, setSiderCollapsed] = useState(false); // 桌面端可折叠
+
 <div className="min-h-screen bg-[#e5e7eb] text-black">
-  {/* 桌面侧栏：fixed + 仅在 md 以上展示 */}
-  <aside className="fixed left-0 top-0 z-40 hidden md:flex
-                    h-screen w-[160px] flex-col border-r border-[#ebeef5] bg-white">
-    {/* logo + nav + footer */}
+  {/* 桌面侧栏：fixed + 仅在 md 以上展示，宽度在 224 ↔ 64 之间过渡 */}
+  <aside className={`fixed left-0 top-0 z-40 hidden md:flex
+                     h-screen flex-col border-r border-[#ebeef5] bg-white
+                     transition-[width] duration-200
+                     ${siderCollapsed ? "w-[64px]" : "w-[224px]"}`}>
+    {/* logo + nav + 底部折叠按钮 —— 详见下面「可折叠侧栏」子节 */}
   </aside>
 
-  {/* 主体：md 上 padding-left 让位给侧栏 */}
-  <div className="min-h-screen md:pl-[160px]">
+  {/* 主体：md 上 padding-left 让位给侧栏，跟随 collapsed 切换 */}
+  <div className={`min-h-screen transition-[padding] duration-200
+                   ${siderCollapsed ? "md:pl-[64px]" : "md:pl-[224px]"}`}>
     {/* ⭐ 整页只有 <main> 一个滚动条；header / 面包屑都放在 main 内部，
        滚动时随内容上移消失，让位给表格的 sticky thead 真正贴在浏览器顶端。 */}
     <main className="h-screen overflow-y-auto bg-[#e5e7eb]">
@@ -148,24 +178,102 @@ description: |
 </div>
 ```
 
+### 🧱 可折叠侧栏（桌面端）
+
+桌面端给侧栏加展开 / 收起按钮，固定在**左下角**。收起后只剩图标列；移动端抽屉不进入折叠态（窄屏没必要再缩）。
+
+```jsx
+import { LayoutDashboard, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+
+function SiderContent({ activeTab, onChange, mobile = false, collapsed = false, onToggleCollapsed }) {
+  const isCollapsed = !mobile && collapsed; // 移动端豁免
+
+  return (
+    <aside className={`${mobile ? "flex" : "fixed left-0 top-0 z-40 hidden md:flex"}
+                       h-screen flex-col border-r border-[#ebeef5] bg-white
+                       transition-[width] duration-200
+                       ${isCollapsed ? "w-[64px]" : "w-[224px]"}`}>
+      {/* logo 行：收起时隐藏文字、保留图标且居中 */}
+      <div className={`flex h-[60px] items-center gap-2
+                       ${isCollapsed ? "justify-center px-2" : "px-4"}`}>
+        <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center
+                        rounded-full border border-brand text-brand">
+          <LayoutDashboard size={18} strokeWidth={1.8} />
+        </div>
+        {!isCollapsed && <div className="truncate text-lg font-bold text-black">罗盘</div>}
+      </div>
+
+      {/* nav：把 collapsed 透传给 NavItem */}
+      <nav className="flex-1 space-y-1 px-1 py-3">
+        {/* <NavItem ... collapsed={isCollapsed} /> */}
+      </nav>
+
+      {/* 底部折叠按钮：左下角，仅桌面端 */}
+      {!mobile && (
+        <div className="border-t border-[#ebeef5] bg-white px-2 py-2 flex items-center">
+          <button
+            type="button"
+            onClick={onToggleCollapsed}
+            aria-label={isCollapsed ? "展开侧边栏" : "收起侧边栏"}
+            title={isCollapsed ? "展开" : "收起"}
+            className="inline-flex h-8 w-8 items-center justify-center rounded
+                       border border-slate-200 bg-white text-black
+                       hover:bg-[#f5f7fa] hover:text-brand"
+          >
+            {isCollapsed ? <PanelLeftOpen size={16} strokeWidth={1.8} />
+                         : <PanelLeftClose size={16} strokeWidth={1.8} />}
+          </button>
+        </div>
+      )}
+    </aside>
+  );
+}
+
+function NavItem({ active, icon, label, onClick, collapsed = false }) {
+  return (
+    <button
+      onClick={onClick}
+      title={collapsed ? label : undefined}    /* 收起时给 hover tooltip 兜底 */
+      className={`flex h-10 w-full items-center gap-3 rounded text-xs transition-colors
+                  ${collapsed ? "justify-center px-0" : "px-3"}
+                  ${active
+                    ? "bg-brand-light font-medium text-brand"
+                    : "font-medium text-black hover:bg-[#f5f7fa] hover:text-brand"}`}
+    >
+      {icon}
+      {!collapsed && <span>{label}</span>}
+    </button>
+  );
+}
+```
+
 ### ⚙️ 关键参数
 
 | 项 | 值 |
 |---|---|
-| 侧栏宽 | `w-[160px]`（中文 5 字标题不换行的最小宽度） |
+| 侧栏宽（展开） | `w-[224px]`（中文 5 字标题如「海外短剧检测」不换行 + 留呼吸空间） |
+| 侧栏宽（收起） | `w-[64px]`（仅 logo + 图标列） |
+| 宽度过渡 | `transition-[width] duration-200`（aside 与主内容 padding 同步） |
+| 主内容左 padding | `md:pl-[64px]` ↔ `md:pl-[224px]`，与侧栏同 200ms 过渡 |
+| 折叠图标 | `PanelLeftOpen` / `PanelLeftClose`（lucide），`size={16} strokeWidth={1.8}` |
+| 折叠按钮位置 | 侧栏底部 `border-t` 区域，左对齐（`justify-center` 或 `flex items-center`） |
+| 移动端豁免 | `isCollapsed = !mobile && collapsed` —— 抽屉不进折叠态、不显示按钮 |
 | 顶部 header 高 | `h-[50px]`（**不 sticky**，跟内容一起滚走） |
 | 面包屑条高 | `h-9`（**不 sticky**） |
 | 主体可滚高 | `h-screen overflow-y-auto`（main 是唯一滚动条） |
 | 移动端侧栏 | `MobileSider` 浮层 + `bg-black/30` 遮罩 |
 
 ### ⚠️ 禁令
-- 侧栏宽不要小于 `w-[160px]`，否则 5 字中文标题（如「数据抓取概览」）会换行
+- 侧栏展开宽不要小于 `w-[224px]`，否则中文 5 字标题（「海外短剧检测」）会被挤成多行（旧版 `w-[160px]` 已废弃 —— 5 字标题会变 3 行）
+- 收起宽不要小于 `w-[64px]`，否则图标 + 圆框 logo 会贴边
 - ⛔ **不要给 header 加 `sticky` 或 `fixed`** —— 长表格滚动时会挡住 sticky thead，违背"列名贴顶"的预期
 - 不要把 header 放在 `<main>` **外部**，那样 header 和 main 是两个独立滚动上下文，header 永远不会跟着滚走
 - main 必须是页面唯一的滚动容器（`overflow-y-auto h-screen`），sticky 子元素才能正确锚定到浏览器视口
+- 折叠按钮只在桌面端显示（`!mobile`），移动端抽屉用 open/close 控制整个抽屉、没有"折叠"概念
+- 收起后必须给 `NavItem` 加 `title={label}` 兜底 hover 提示，否则只有图标用户看不出含义
 
 ### 📁 本仓库参考
-[frontend/src/App.jsx](frontend/src/App.jsx) — `Dashboard` / `SiderContent` / `MobileSider` / `NavItem`
+[frontend/src/App.jsx](frontend/src/App.jsx) — `Dashboard`（`siderCollapsed` state） / `SiderContent`（`collapsed` 模式） / `MobileSider`（移动端豁免） / `NavItem`（响应 collapsed）
 
 ---
 
@@ -441,8 +549,8 @@ const TAB_DEFS = [
 
 | 组件 | 签名 | 关键 className |
 |------|------|---------------|
-| `ChartBlock` | `({ title, hint, children })` | `rounded border border-[#ebeef5] bg-white p-3`；title `text-xs font-semibold`；hint `text-[11px] opacity-70` |
-| `Kpi` | `({ label, value, suffix, tone })` | `rounded border border-[#ebeef5] bg-[#f7f8fa] px-4 py-3`；value `text-xl font-bold tabular-nums`；tone='primary' → `text-brand` |
+| `ChartBlock` | `({ title, hint, children })` | `rounded border border-[#ebeef5] bg-white p-3`；title `text-sm font-semibold`（18px，主标题档）；hint `text-xs opacity-70`（16px，与标题 2px 落差） |
+| `Kpi` | `({ label, value, suffix, tone })` | `rounded border border-[#ebeef5] bg-[#f7f8fa] px-4 py-3`；label `text-xs`（16px，**不要再用 11px**）；value `text-xl font-bold tabular-nums`（20px，视觉锚点）；tone='primary' → `text-brand` |
 | `ChartEmpty` | `()` | `flex h-40 items-center justify-center text-xs opacity-60` |
 | `TabEmpty` | `({ text })` | `flex h-40 flex-col items-center justify-center bg-[#f7f8fa]` + 图标 |
 | `TabError` | `({ message })` | `bg-red-50 border-red-200 text-red-700` |
@@ -763,17 +871,30 @@ useEffect(() => () => clearTimeout(closeTimerRef.current), []);
 
 ### 🧱 右侧抽屉 骨架（用户重点关心）
 
+桌面端默认占视口 60%（`md:w-[60vw]`），移动端铺满 100%；**不要**再用 `max-w-[720px]` 截断（旧口径，已在本项目废弃 —— 720 在大屏上看着像窄的"小弹框"，不像抽屉）。
+
 ```jsx
 <div className={`fixed inset-0 z-50 flex justify-end
                  transition-opacity duration-500 ease-out
                  ${isClosing ? "bg-black/0 opacity-0" : "bg-black/35 opacity-100"}`}
      onClick={(e) => e.target === e.currentTarget && closeWithAnimation()}>
-  <div className={`h-full w-full max-w-[720px] overflow-y-auto bg-white
+  <div className={`h-full w-full md:w-[60vw] overflow-y-auto bg-white
                    shadow-[-12px_0_36px_rgba(15,23,42,0.18)]
                    transition-all duration-500 ease-out transform
                    ${isClosing ? "translate-x-full opacity-0" : "translate-x-0 opacity-100"}`}
        onClick={(e) => e.stopPropagation()}>
-    {/* 内容 */}
+
+    {/* sticky 头部 —— 内边距 px-8 py-6（比中间弹框大一档，配合更宽幅留白） */}
+    <div className="sticky top-0 z-10 flex items-start justify-between gap-4
+                    border-b border-[#ebeef5] bg-white px-8 py-6">
+      <h3 className="text-lg font-bold text-black">{title}</h3>
+      <button onClick={closeWithAnimation}>×</button>
+    </div>
+
+    {/* 内容区 —— 段落间距 space-y-6，节奏比窄抽屉更松 */}
+    <div className="space-y-6 px-8 py-6">
+      {/* 封面 / 简介 / 章节 ... 三栏栅格在 60vw 下用 sm:grid-cols-3 而非默认 grid-cols-2 */}
+    </div>
   </div>
 </div>
 ```
@@ -804,16 +925,22 @@ useEffect(() => () => clearTimeout(closeTimerRef.current), []);
 |---|---|
 | backdrop blur | `backdrop-blur-sm`（仅中间弹框，抽屉不要） |
 | backdrop 色 | 中间用 `slate-900/35`，抽屉用 `black/35` |
-| 抽屉 max-w | `max-w-[720px]`（再宽变成「半屏 modal」） |
+| 抽屉宽度 | `w-full md:w-[60vw]`（桌面 60vw，移动 100%）—— **旧 `max-w-[720px]` 已废弃** |
+| 抽屉头部内边距 | `px-8 py-6`（比中间弹框 `px-6 py-4` 大一档，配合更宽幅留白） |
+| 抽屉内容区 | `px-8 py-6 space-y-6`（节与节之间稍开） |
+| 抽屉标题 | `text-lg font-bold`（18px，与中间弹框 `text-base` 拉开层级） |
+| 抽屉内栅格 | `grid-cols-2 sm:grid-cols-3`（60vw 下 3 列利用率高，2 列空旷） |
 | 抽屉 shadow | **负 X** `[-12px_0_36px_...]` 强化拉入感 |
 | 抽屉 duration | 500ms 比中间 260ms 长，制造「侧拉」仪式感 |
 | 内容 max-h | `max-h-[calc(100dvh-48px)]` + `overflow-y-auto` |
 
 ### ⚠️ 禁令
 - 关闭流程必须**先动画再 onClose**（用 `isClosing` flag + setTimeout），React unmount 太快会截断动画
-- 抽屉 `max-w` 不超 720（再宽就变成半屏 modal，失去「抽屉感」）
+- 抽屉宽度**不要**再写 `max-w-[720px]`（旧口径） —— 用 `md:w-[60vw]` 让它跟随视口；移动端用 `w-full` 兜底
+- 抽屉宽超过 70vw 就不再像"侧拉"而像"半屏 modal"；超过 80vw 直接退化成全屏，**60–65vw 是黄金区间**
 - backdrop 不要用 `bg-black`（纯黑过重），用 `bg-black/35` 或 `slate-900/35`
 - ESC 监听必须在 `open` 时挂、关时摘，否则切到其他页面后还在监听
+- 抽屉变宽后**别忘了同步内边距 / 栅格 / 主标题字号**，否则内容仍按窄抽屉的密度排版，看上去稀稀拉拉
 
 ### 📁 本仓库参考
 - [frontend/src/components/NovelModal.jsx](frontend/src/components/NovelModal.jsx) — 中间弹框
@@ -832,11 +959,14 @@ useEffect(() => () => clearTimeout(closeTimerRef.current), []);
 | **滚动锁** | 任何 modal 打开时 `body.style.overflow = "hidden"`；关闭 / 卸载时恢复 |
 | **ESC 关闭** | 任何 modal 都监听 `keydown Escape` 并 `closeWithAnimation()` |
 | **Tooltip 方向** | 永远向上（`bottom-full` / `bottom-[calc(100%+8px)]`）。**不向下展开** |
-| **多选数据格式** | 前端 CSV 字符串 → 后端 `_split_csv` → ClickHouse `IN Array(String)` 参数化 |
+| **多选数据格式** | 前端 CSV 字符串 → 后端 split → 数组参数化查询。**契约不变，实现按库选**：PG / DuckDB `= ANY($list)`、ClickHouse `IN Array(String)`、MySQL `FIND_IN_SET` 或动态拆 IN 占位符。前端只管 CSV，跨架构无差异 |
 | **状态分层渲染** | 永远 `error > loading > empty > content` 顺序判定 |
-| **图标尺寸** | tooltip / chip = 12px；按钮 / tab = 14px；NavItem = 17px；空态 = 18px |
+| **字号层级（三档不混用）** | KPI 数字 `text-xl/2xl`（20–24，视觉锚点）> 卡片 / 图表主标题 `text-sm` 或 `text-base`（18 / 16，主标题）> 标签 / 说明文 `text-xs`（16，正文级地板）。**相邻两档至少 2px 落差**；`text-[11px]` 仅用于芯片 / 微注释，不要用在卡片正文级 label |
+| **图标尺寸** | tooltip / chip = 12px；按钮 / tab = 14px；NavItem = 17px；空态 = 18px；侧栏折叠按钮 = 16px |
 | **数字对齐** | 所有数字列加 `tabular-nums`，避免不等宽字体抖动 |
 | **总数强调** | 用 `text-base font-semibold tabular-nums text-brand`（Pagination / KPI） |
+| **侧栏可折叠** | 桌面端默认 `w-[224px]`，可收起到 `w-[64px]` 仅图标列；移动端 `MobileSider` 不进入折叠态（窄屏没必要） |
+| **抽屉宽度** | 桌面端 `md:w-[60vw]`（黄金区间 60–65vw），移动端 `w-full`；**禁用旧口径 `max-w-[720px]`** |
 
 ---
 
@@ -850,24 +980,28 @@ useEffect(() => () => clearTimeout(closeTimerRef.current), []);
 - [ ] 全站字体 `Helvetica Neue, Helvetica, "PingFang SC", ...`，背景 `#e5e7eb`
 
 ### 模式自检
-- [ ] **布局**：左侧栏 160px 不挤标题；header 和面包屑都在 `<main>` 内部、**不 sticky**、滚动时一起消失；只有 `<main>` 有滚动条
+- [ ] **布局**：左侧栏展开宽 `w-[224px]`、收起宽 `w-[64px]`（旧口径 160 已废弃，5 字标题会被挤换行）；header 和面包屑都在 `<main>` 内部、**不 sticky**、滚动时一起消失；只有 `<main>` 有滚动条
+- [ ] **侧栏折叠**：左下角有 `PanelLeftClose / Open` 按钮；点击 200ms 平滑过渡，主内容 `pl-` 同步切换；移动端抽屉**不**进入折叠态、不显示按钮
+- [ ] **侧栏折叠**：收起时 NavItem 仅图标居中，hover 通过 `title={label}` 显示标签兜底
 - [ ] **筛选**：选 2 个值后右侧出现灰圆 ✕；点 ✕ 一键清空；不选时只显示 ∨
 - [ ] **筛选**：选中项用 `bg-brand-light text-brand` + ✓；展示时用中文 `、` 分隔
 - [ ] **Tooltip**：hover 时向上展开；底部有向下双层三角；离开时无残留 1px gap
 - [ ] **可视化**：点 tab 切内容；点收起整段塌；折叠时点 tab 自动展开
 - [ ] **可视化**：error / loading / empty / content 四态层叠正确
 - [ ] **可视化 Tooltip**：hover 时 tooltip 直接显示在指针位置，**不**从图表左上角滑入（确认所有 Recharts Tooltip 加了 `isAnimationActive={false}` + `wrapperStyle={{ transition: "none" }}`）
+- [ ] **字号层级**：KPI 数字（`text-xl`/20px）> 卡片主标题（`text-sm`/18px）> 标签 / 说明（`text-xs`/16px），相邻两档至少 2px 落差；卡片正文级 label **没有** `text-[11px]`
 - [ ] **表格**：thead `bg-[#f2f3f5]` + 阴影下分割线（不用 border-b）
 - [ ] **表格**：长表格滚动时 thead 应**始终粘在视口顶端**（确认外层卡片不用 `overflow-hidden`，thead 上有 `sticky top-0 z-20`）
 - [ ] **分页**：「共 N 条 + 页码 + chevron」居中单行，**与表格共用同一 bordered 容器**（不是独立卡片）；单页时只剩居中的总数；零结果时整段隐藏；7 页以上自动用 ··· 折叠
 - [ ] **触发按钮**：4 态都能复现（默认绿框 / 抓取中带进度 / 完成绿底「再抓一次」/ 失败红底「重试」）
 - [ ] **中间弹框**：scale 95→100 + translate-y 2→0 入场，260-300ms，ESC + backdrop 关
-- [ ] **右抽屉**：从右滑入 500ms，左缘负 X 阴影，max-w 720px
+- [ ] **右抽屉**：从右滑入 500ms，左缘负 X 阴影；**桌面端 `md:w-[60vw]`**（旧 `max-w-[720px]` 已废弃），移动端 `w-full`；变宽后内边距 `px-8 py-6`、栅格 `sm:grid-cols-3`、标题 `text-lg` 已同步
 
 ### 一致性
 - [ ] 所有动画时长按 200 / 260-300 / 500 三档分配
 - [ ] 所有 modal 都加 ESC + 滚动锁
 - [ ] 所有 tooltip 都向上展开
 - [ ] 所有数字列加 `tabular-nums`
+- [ ] 字号层级三档（数字 / 主标题 / 说明）相邻至少 2px 落差，没有"标题和说明挤同一档"的情况
 
 跑完清单不通过的项，回 §3-§8 对应章节复核「关键参数」与「禁令」。

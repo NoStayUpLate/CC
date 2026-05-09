@@ -395,7 +395,7 @@ function OverviewTab({ stats }) {
 function Kpi({ label, value, suffix, tone }) {
   return (
     <div className="rounded border border-[#ebeef5] bg-[#f7f8fa] px-4 py-3">
-      <div className="text-[11px] text-black">{label}</div>
+      <div className="text-xs text-black">{label}</div>
       <div className={`mt-1 text-xl font-bold tabular-nums ${tone === "primary" ? "text-brand" : "text-black"}`}>
         {value}
         {suffix && <span className="ml-1 text-xs font-normal text-black">{suffix}</span>}
@@ -688,8 +688,8 @@ function ChartBlock({ title, hint, children }) {
   return (
     <div className="rounded border border-[#ebeef5] bg-white p-3">
       <div className="mb-2">
-        <div className="text-xs font-semibold text-black">{title}</div>
-        {hint && <div className="mt-0.5 text-[11px] text-black opacity-70">{hint}</div>}
+        <div className="text-sm font-semibold text-black">{title}</div>
+        {hint && <div className="mt-0.5 text-xs text-black opacity-70">{hint}</div>}
       </div>
       {children}
     </div>

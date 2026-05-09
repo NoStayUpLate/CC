@@ -66,7 +66,7 @@ export default function NovelCard({ novel, onClick }) {
 
         {/* GHI 分值 */}
         <div className="text-right flex-shrink-0">
-          <div className="text-3xl font-semibold tracking-tight text-brand transition-colors duration-200 tabular-nums">
+          <div className="text-2xl font-semibold tracking-tight text-brand transition-colors duration-200 tabular-nums">
             {novel.ghi}
           </div>
           <div className="text-[10px] text-black leading-none">GHI</div>
@@ -74,12 +74,12 @@ export default function NovelCard({ novel, onClick }) {
       </div>
 
       {/* 书名 */}
-      <h3 className="text-base font-bold text-black leading-snug line-clamp-2">
+      <h3 className="text-sm font-bold text-black leading-snug line-clamp-2">
         {novel.title || "（无标题）"}
       </h3>
 
       {/* 简介 */}
-      <p className="text-sm text-black leading-relaxed flex-1">
+      <p className="text-xs text-black leading-relaxed flex-1">
         {truncate(novel.summary) || <span className="italic text-black">暂无简介</span>}
       </p>
 

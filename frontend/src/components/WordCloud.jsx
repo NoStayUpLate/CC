@@ -15,7 +15,7 @@ function getColor(ratio) {
 export default function WordCloud({ keywords }) {
   if (!keywords || Object.keys(keywords).length === 0) {
     return (
-      <p className="py-5 text-center text-sm italic text-black">
+      <p className="py-5 text-center text-xs italic text-black">
         正文内容受限，暂无云图
       </p>
     );

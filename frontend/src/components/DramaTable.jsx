@@ -212,7 +212,7 @@ export default function DramaTable({ dramas, loading, onTitleClick, footer }) {
                         <button
                           type="button"
                           onClick={() => onTitleClick(drama)}
-                          className="block max-w-full truncate text-left text-sm font-semibold text-black hover:text-brand"
+                          className="block max-w-full truncate text-left text-xs font-semibold text-black hover:text-brand"
                           title={drama.title}
                         >
                           {drama.title || "（无标题）"}
@@ -256,7 +256,7 @@ export default function DramaTable({ dramas, loading, onTitleClick, footer }) {
         </table>
 
       {isEmpty && (
-        <div className="border-t border-[#ebeef5] py-12 text-center text-sm text-black">
+        <div className="border-t border-[#ebeef5] py-12 text-center text-xs text-black">
           暂无匹配短剧数据，请先触发抓取。
         </div>
       )}

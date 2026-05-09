@@ -12,7 +12,14 @@ from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 
 from database import query_dicts, query_scalar
-from models import DramaOut, DramasResponse, ScrapeRequest, ScrapeStatusResponse
+from models import (
+    DramaOut,
+    DramasResponse,
+    RankHistoryPoint,
+    RankHistoryResponse,
+    ScrapeRequest,
+    ScrapeStatusResponse,
+)
 from services.drama_scraper_service import (
     create_task,
     get_task,
@@ -199,6 +206,36 @@ def get_tags():
         LIMIT 50
     """)
     return {"tags": [r["tag"] for r in rows]}
+
+
+@router.get("/rank-history", response_model=RankHistoryResponse)
+def get_rank_history(
+    platform: str = Query(..., description="平台名称（精确匹配）"),
+    title: str = Query(..., description="短剧标题（精确匹配）"),
+    days: int = Query(30, ge=1, le=180, description="近 N 天，默认 30"),
+):
+    """资源位每日变化曲线。数值越小越好（rank=1 = 平台首位）。"""
+    sql = """
+        SELECT crawl_date, rank_in_platform
+        FROM drama_rank_history
+        WHERE platform = $platform
+          AND title    = $title
+          AND crawl_date >= current_date - $days::INTEGER
+        ORDER BY crawl_date ASC
+    """
+    try:
+        rows = query_dicts(sql, {"platform": platform, "title": title, "days": days})
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"DuckDB 查询失败: {exc}")
+
+    items = [
+        RankHistoryPoint(
+            crawl_date=r["crawl_date"],
+            rank_in_platform=int(r["rank_in_platform"]),
+        )
+        for r in rows
+    ]
+    return RankHistoryResponse(platform=platform, title=title, items=items)
 
 
 @router.get("/{drama_id}", response_model=DramaOut)

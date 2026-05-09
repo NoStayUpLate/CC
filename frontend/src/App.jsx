@@ -10,6 +10,8 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
   X,
 } from "lucide-react";
 import FilterBar from "./components/FilterBar";
@@ -68,6 +70,7 @@ function Dashboard({ user, onLogout }) {
   const [displayTab, setDisplayTab] = useState("dramas");
   const [tabVisible, setTabVisible] = useState(true);
   const [siderOpen, setSiderOpen] = useState(false);
+  const [siderCollapsed, setSiderCollapsed] = useState(false);
   const [systemOverviewOpen, setSystemOverviewOpen] = useState(false);
 
   // 小说状态
@@ -110,7 +113,7 @@ function Dashboard({ user, onLogout }) {
   const loadNovels = useCallback((page, filters) => {
     setNovelLoading(true);
     setNovelError(null);
-    // 后端（ClickHouse）已完成 GHI 分项计算，前端仅消费返回字段并渲染。
+    // 后端（DuckDB）已完成 GHI 分项计算，前端仅消费返回字段并渲染。
     fetchNovels({ ...filters, page, page_size: PAGE_SIZE })
       .then((data) => {
         setNovels(data.items || []);
@@ -176,12 +179,21 @@ function Dashboard({ user, onLogout }) {
 
   return (
     <div className="min-h-screen bg-[#e5e7eb] text-black">
-      <SiderContent activeTab={activeTab} onChange={handleTabChange} />
+      <SiderContent
+        activeTab={activeTab}
+        onChange={handleTabChange}
+        collapsed={siderCollapsed}
+        onToggleCollapsed={() => setSiderCollapsed((c) => !c)}
+      />
       <MobileSider open={siderOpen} onClose={() => setSiderOpen(false)}>
         <SiderContent activeTab={activeTab} onChange={handleTabChange} mobile />
       </MobileSider>
 
-      <div className="min-h-screen md:pl-[160px]">
+      <div
+        className={`min-h-screen transition-[padding] duration-200 ${
+          siderCollapsed ? "md:pl-[64px]" : "md:pl-[224px]"
+        }`}
+      >
         {/*
           整页只有 <main> 一个滚动条；header 与面包屑都在 main 里，
           滚动时随内容一起上移消失，让位给 sticky thead 真正贴在浏览器顶端。
@@ -198,7 +210,7 @@ function Dashboard({ user, onLogout }) {
                   <Menu size={18} strokeWidth={1.7} />
                 </button>
                 <div className="min-w-0">
-                  <div className="truncate text-sm font-semibold text-black">
+                  <div className="truncate text-xs font-semibold text-black">
                     {currentMeta.title}
                   </div>
                   <div className="hidden text-[11px] text-black sm:block">
@@ -276,7 +288,7 @@ function Dashboard({ user, onLogout }) {
                 />
 
                 {novelError && (
-                  <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-500">
+                  <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-500">
                     查询失败：{novelError}
                   </div>
                 )}
@@ -311,7 +323,7 @@ function Dashboard({ user, onLogout }) {
                 />
 
                 {dramaError && (
-                  <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-500">
+                  <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-500">
                     查询失败：{dramaError}
                   </div>
                 )}
@@ -370,26 +382,31 @@ function GhiInfoTooltip() {
           GHI = S_popular × 0.3 + S_engage × 0.3 + S_adapt × 0.4
         </div>
         <p className="text-xs text-black leading-relaxed">
-          指标均由 ClickHouse 预计算后返回，前端只做字段映射展示，避免口径偏差。
+          指标均由 DuckDB 在 SQL 内预计算后返回，前端只做字段映射展示，避免口径偏差。
         </p>
       </div>
     </div>
   );
 }
 
-function SiderContent({ activeTab, onChange, mobile = false }) {
+function SiderContent({ activeTab, onChange, mobile = false, collapsed = false, onToggleCollapsed }) {
+  // 移动端抽屉始终保持完全展开（窄屏没必要再收起）；只有桌面侧栏受 collapsed 影响
+  const isCollapsed = !mobile && collapsed;
   return (
     <aside
       className={`${mobile ? "flex" : "fixed left-0 top-0 z-40 hidden md:flex"}
-        h-screen w-[160px] flex-col border-r border-[#ebeef5] bg-white`}
+        h-screen ${isCollapsed ? "w-[64px]" : "w-[224px]"} flex-col border-r border-[#ebeef5] bg-white
+        transition-[width] duration-200`}
     >
-      <div className="flex h-[60px] items-center gap-2 px-4">
-        <div className="flex h-7 w-7 items-center justify-center rounded-full border border-brand text-brand">
+      <div className={`flex h-[60px] items-center gap-2 ${isCollapsed ? "justify-center px-2" : "px-4"}`}>
+        <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full border border-brand text-brand">
           <LayoutDashboard size={18} strokeWidth={1.8} />
         </div>
-        <div className="min-w-0">
-          <div className="truncate text-xl font-bold text-black">罗盘</div>
-        </div>
+        {!isCollapsed && (
+          <div className="min-w-0">
+            <div className="truncate text-lg font-bold text-black">罗盘</div>
+          </div>
+        )}
       </div>
 
       <nav className="flex-1 space-y-1 px-1 py-3">
@@ -397,41 +414,56 @@ function SiderContent({ activeTab, onChange, mobile = false }) {
           active={activeTab === "novels"}
           icon={<BookOpen size={17} strokeWidth={1.8} />}
           label="海外小说检测"
+          collapsed={isCollapsed}
           onClick={() => onChange("novels")}
         />
         <NavItem
           active={activeTab === "dramas"}
           icon={<Clapperboard size={17} strokeWidth={1.8} />}
           label="海外短剧检测"
+          collapsed={isCollapsed}
           onClick={() => onChange("dramas")}
         />
         <NavItem
           active={activeTab === "scrape"}
           icon={<Activity size={17} strokeWidth={1.8} />}
           label="数据抓取概览"
+          collapsed={isCollapsed}
           onClick={() => onChange("scrape")}
         />
       </nav>
 
-      <div className="border-t border-[#ebeef5] bg-white px-2 py-3 text-right text-[11px] text-black">
-        数据监测工作台
-      </div>
+      {!mobile && (
+        <div className="border-t border-[#ebeef5] bg-white px-2 py-2 flex items-center">
+          <button
+            type="button"
+            onClick={onToggleCollapsed}
+            aria-label={isCollapsed ? "展开侧边栏" : "收起侧边栏"}
+            title={isCollapsed ? "展开" : "收起"}
+            className="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-200 bg-white text-black hover:bg-[#f5f7fa] hover:text-brand"
+          >
+            {isCollapsed ? <PanelLeftOpen size={16} strokeWidth={1.8} /> : <PanelLeftClose size={16} strokeWidth={1.8} />}
+          </button>
+        </div>
+      )}
     </aside>
   );
 }
 
-function NavItem({ active, icon, label, onClick }) {
+function NavItem({ active, icon, label, onClick, collapsed = false }) {
   return (
     <button
       onClick={onClick}
-      className={`flex h-10 w-full items-center gap-3 rounded px-3 text-sm transition-colors
+      title={collapsed ? label : undefined}
+      className={`flex h-10 w-full items-center gap-3 rounded text-xs transition-colors
+        ${collapsed ? "justify-center px-0" : "px-3"}
         ${active
           ? "bg-brand-light font-medium text-brand"
           : "font-medium text-black hover:bg-[#f5f7fa] hover:text-brand"
         }`}
     >
       {icon}
-      <span>{label}</span>
+      {!collapsed && <span>{label}</span>}
     </button>
   );
 }
@@ -445,7 +477,7 @@ function MobileSider({ open, onClose, children }) {
         onClick={onClose}
         aria-label="关闭导航"
       />
-      <div className="relative h-full w-[160px] bg-white shadow-xl">
+      <div className="relative h-full w-[224px] bg-white shadow-xl">
         {children}
         <button
           onClick={onClose}
@@ -481,7 +513,7 @@ function GridState({ loading, empty, emptyText, children }) {
         <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-brand-light text-brand">
           <LayoutDashboard size={24} strokeWidth={1.7} />
         </div>
-        <p className="text-sm">{emptyText}</p>
+        <p className="text-xs">{emptyText}</p>
       </div>
     );
   }
@@ -501,7 +533,7 @@ function Pagination({ page, total, onChange }) {
   if (total === 0) return null;
   return (
     <div className="flex flex-wrap items-center justify-center gap-3 px-3 py-3">
-      <span className="text-sm text-black">
+      <span className="text-xs text-black">
         共
         <span className="mx-1 font-semibold tabular-nums">
           {total.toLocaleString("zh-CN")}
@@ -595,7 +627,7 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-page text-sm text-black">
+      <div className="min-h-screen flex items-center justify-center bg-page text-xs text-black">
         正在检查登录状态…
       </div>
     );

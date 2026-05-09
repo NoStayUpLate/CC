@@ -148,6 +148,8 @@ export const fetchDramaPlatforms = () => get("/dramas/meta/platforms");
 export const fetchDramaLangs = () => get("/dramas/meta/langs");
 export const fetchDramaTags = () => get("/dramas/meta/tags");
 export const fetchDrama = (dramaId) => get(`/dramas/${dramaId}`);
+export const fetchDramaRankHistory = (platform, title, days = 30) =>
+  get("/dramas/rank-history", { platform, title, days });
 export const triggerDramaScrape = (req) => post("/dramas/scrape", req);
 export const fetchDramaScrapeStatus = (taskId) => get(`/dramas/scrape/${taskId}`);
 

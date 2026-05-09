@@ -41,7 +41,7 @@ export default function SystemOverviewModal({ open, onClose }) {
       >
         <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-[#ebeef5] bg-white px-6 py-4">
           <div>
-            <h3 className="text-base font-bold text-black">罗盘 · 海外内容监测看板 · 系统说明</h3>
+            <h3 className="text-sm font-bold text-black">罗盘 · 海外内容监测看板 · 系统说明</h3>
             <p className="mt-1 text-[11px] text-black opacity-70">
               给评审人员的速读材料 —— 业务价值 / 创新度 / 开发难度 三维度
             </p>
@@ -55,7 +55,7 @@ export default function SystemOverviewModal({ open, onClose }) {
           </button>
         </div>
 
-        <div className="max-h-[calc(88vh-72px)] overflow-y-auto px-6 py-5 text-sm leading-relaxed text-black">
+        <div className="max-h-[calc(88vh-72px)] overflow-y-auto px-6 py-5 text-xs leading-relaxed text-black">
           <Section title="一、业务价值">
             <P>
               <strong>核心问题</strong>：AI 短剧团队选品长期靠「拍脑袋 + 抄爆款」，撞车率高、命中率低，跨平台调研每天耗 1-2 小时。
@@ -112,6 +112,9 @@ export default function SystemOverviewModal({ open, onClose }) {
               <P>
                 <strong>权重 45/35/20 倾向 S_tag</strong> —— 题材是团队<strong>能选</strong>的，资源位和新鲜度是<strong>结果</strong>。这与 GHI 一脉相承（重适配度），但输入维度完全不同（短剧拿不到 views/likes，但能拿到 rank 和时间）。<strong>两个算法共用同一份 SQL 计算骨架</strong>，前端 ScoreBar / Modal / Tooltip 也复用，做到「换一套输入就长出新指数」。
               </P>
+              <P>
+                <strong>资源位每日历史</strong>：单独一张 <Inline>drama_rank_history</Inline> 表按 <Inline>(platform, title, crawl_date)</Inline> 留每日快照（dramas 主表 ON CONFLICT 会覆盖昨天的 rank，单独存历史避免丢点），详情抽屉里画成 LineChart，<strong>Y 轴反向</strong>让数值越小（rank=1）越靠顶，符合"小=重要"的语义。
+              </P>
             </SubSection>
 
             <SubSection title="3. 选品罗盘（标签热度散点四象限）">
@@ -140,18 +143,18 @@ export default function SystemOverviewModal({ open, onClose }) {
             <Table
               head={["维度", "复杂度"]}
               rows={[
-                ["技术栈跨度", "Python（FastAPI + Playwright + APScheduler）+ React 18 + Vite + Tailwind + ClickHouse + Docker Compose + Caddy，全栈 + DevOps 一锅端"],
+                ["技术栈跨度", "Python（FastAPI + Playwright + APScheduler）+ React 18 + Vite + Tailwind + DuckDB 嵌入式 + Docker Compose，全栈 + DevOps 一锅端"],
                 ["爬虫工程", "8 个海外短剧平台，HTML 结构各不相同，前端反爬严格。封装三件套基类（HTTP / Playwright / 短剧专用），子类只需 ~50 行实现，重试 / 代理回退 / 浏览器生命周期都在基类"],
-                ["数据建模", "ClickHouse 列式存储 + ReplacingMergeTree 引擎自动去重，GHI / DHI 三层嵌套 SQL 在数据库内算（前端零计算）；数据缺失契约严格：统一 None 禁止 0 占位，否则会污染评分排名"],
+                ["数据建模", "DuckDB 嵌入式列存（替代早期 ClickHouse 同栈方案，省 600MB+ 内存，1C2G ECS 也跑得动）+ PRIMARY KEY ON CONFLICT 去重，GHI / DHI 三层嵌套 SQL 在数据库内算（前端零计算）；数据缺失契约严格：统一 None 禁止 0 占位，否则会污染评分排名"],
                 ["算法可解释 & 可演进", "GHI（小说）和 DHI（短剧）共用同一份 SQL 计算骨架（内层算分项 → 外层加权），改算法只动 SQL 模板 + Python 标签集合，无需重抓数据 / 无需迁移表结构，验证迭代成本极低"],
-                ["可视化", "recharts 实现选品罗盘的散点四象限 + 平台×栏位热力图 + TOP20 横向柱状榜单，全部在浏览器侧聚合渲染"],
+                ["可视化", "recharts 实现选品罗盘的散点四象限 + 平台×栏位热力图 + TOP20 横向柱状榜单 + 资源位每日变化曲线（Y 轴反向，rank=1 在顶），全部在浏览器侧聚合渲染"],
                 ["鉴权", "JWT + bcrypt + HTTP-only cookie + fail-fast 启动校验；可插拔后端（File / SQLite），同一份接口两种实现"],
-                ["部署", "Docker Compose 同栈 4 容器（Caddy + nginx + FastAPI + ClickHouse），一键运维脚本 6 子命令，国内 ECS 友好镜像源优化（apt → 阿里云 / pip → 阿里云 / npm → npmmirror）"],
-                ["AI 协作工程化", "项目根有 CLAUDE.md（AI 工作手册）+ .claude/skills/ 自定义 skill（爬虫开发流程 / 项目加固审计），让 AI 能按规范长期协作而不破坏架构契约"],
+                ["部署", "Docker Compose 2 容器（nginx 静态资源 + FastAPI 内嵌 DuckDB），DuckDB 单文件挂卷持久化；一键运维脚本 6 子命令，国内 ECS 友好镜像源优化（apt → 阿里云 / pip → 阿里云 / npm → npmmirror / Playwright → npmmirror）"],
+                ["AI 协作工程化", "项目根有 CLAUDE.md（AI 工作手册）+ .claude/skills/ 自定义 skill（爬虫开发流程 / 项目加固审计 / 看板设计模式），让 AI 能按规范长期协作而不破坏架构契约"],
               ]}
             />
             <P>
-              <strong>代码规模参考</strong>：后端约 5000 行 Python（含 11 个爬虫子类）、前端约 3500 行 React、ClickHouse DDL 含字段注释 + 迁移脚本约 250 行。
+              <strong>代码规模参考</strong>：后端约 5000 行 Python（含 11 个爬虫子类）、前端约 3500 行 React、DuckDB DDL 含字段注释 + 一次性 backfill 逻辑约 250 行。
             </P>
           </Section>
 
@@ -164,7 +167,8 @@ export default function SystemOverviewModal({ open, onClose }) {
                 ["短剧 8 平台调度", "backend/scrapers/dramas/en_shortdrama_top5_scraper.py"],
                 ["表结构 + 迁移", "backend/database.py"],
                 ["选品罗盘可视化", "frontend/src/components/DramaInsights.jsx"],
-                ["短剧详情 DHI 三分项展示", "frontend/src/components/DramaModal.jsx"],
+                ["短剧详情 DHI 三分项展示 + 资源位变化曲线", "frontend/src/components/DramaModal.jsx"],
+                ["资源位历史快照表 + 接口", "backend/database.py（drama_rank_history）/ backend/routers/dramas.py（GET /api/dramas/rank-history）"],
                 ["一键运维", "deploy.sh"],
               ]}
             />
@@ -179,7 +183,7 @@ export default function SystemOverviewModal({ open, onClose }) {
 function Section({ title, children }) {
   return (
     <section className="mb-6">
-      <h4 className="mb-3 border-l-[3px] border-brand pl-2 text-sm font-bold text-black">{title}</h4>
+      <h4 className="mb-3 border-l-[3px] border-brand pl-2 text-xs font-bold text-black">{title}</h4>
       <div className="space-y-3">{children}</div>
     </section>
   );
@@ -188,19 +192,19 @@ function Section({ title, children }) {
 function SubSection({ title, children }) {
   return (
     <div className="mt-3 rounded border border-[#ebeef5] bg-[#fafbfc] p-3">
-      <div className="mb-2 text-[13px] font-semibold text-black">{title}</div>
+      <div className="mb-2 text-xs font-semibold text-black">{title}</div>
       <div className="space-y-2">{children}</div>
     </div>
   );
 }
 
 function P({ children }) {
-  return <p className="text-[13px] leading-relaxed text-black">{children}</p>;
+  return <p className="text-xs leading-relaxed text-black">{children}</p>;
 }
 
 function Bullets({ items }) {
   return (
-    <ul className="ml-4 list-disc space-y-1 text-[13px] leading-relaxed text-black">
+    <ul className="ml-4 list-disc space-y-1 text-xs leading-relaxed text-black">
       {items.map((it, idx) => (
         <li key={idx}>{it}</li>
       ))}

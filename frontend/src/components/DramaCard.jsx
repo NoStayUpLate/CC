@@ -52,15 +52,15 @@ export default function DramaCard({ drama, onClick }) {
 
         <div className="text-right">
           <div className="text-xs text-black">资源位位置</div>
-          <div className="text-lg font-bold text-brand tabular-nums">#{drama.rank_in_platform}</div>
+          <div className="text-base font-bold text-brand tabular-nums">#{drama.rank_in_platform}</div>
         </div>
       </div>
 
-      <h3 className="text-base font-bold text-black leading-snug line-clamp-2">
+      <h3 className="text-sm font-bold text-black leading-snug line-clamp-2">
         {drama.title || "（无标题）"}
       </h3>
 
-      <p className="text-sm text-black leading-relaxed flex-1 line-clamp-3">
+      <p className="text-xs text-black leading-relaxed flex-1 line-clamp-3">
         {drama.summary || "暂无简介"}
       </p>
 

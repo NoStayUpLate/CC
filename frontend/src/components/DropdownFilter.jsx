@@ -105,7 +105,7 @@ export function MultiSelectFilter({ label, options, value, onChange, allLabel = 
             <button
               type="button"
               onClick={() => onChange("")}
-              className={`flex w-full items-center rounded px-3 py-2 text-left text-sm transition-colors ${
+              className={`flex w-full items-center rounded px-3 py-2 text-left text-xs transition-colors ${
                 selected.length === 0
                   ? "bg-brand-light text-brand"
                   : "text-black hover:bg-slate-50 hover:text-black"
@@ -118,7 +118,7 @@ export function MultiSelectFilter({ label, options, value, onChange, allLabel = 
                 type="button"
                 key={val}
                 onClick={() => toggleValue(val)}
-                className={`flex w-full items-center justify-between gap-2 rounded px-3 py-2 text-left text-sm transition-colors ${
+                className={`flex w-full items-center justify-between gap-2 rounded px-3 py-2 text-left text-xs transition-colors ${
                   selectedSet.has(val)
                     ? "bg-brand-light text-brand"
                     : "text-black hover:bg-slate-50 hover:text-black"

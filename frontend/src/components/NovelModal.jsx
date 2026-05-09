@@ -27,7 +27,7 @@ function SummaryWithCollapse({ text }) {
   }, [text]);
 
   if (!text) {
-    return <p className="text-sm italic text-black">暂无数据</p>;
+    return <p className="text-xs italic text-black">暂无数据</p>;
   }
 
   const clampStyle = expanded
@@ -43,7 +43,7 @@ function SummaryWithCollapse({ text }) {
     <div className="space-y-2">
       <p
         ref={ref}
-        className="text-sm text-black leading-relaxed whitespace-pre-line"
+        className="text-xs text-black leading-relaxed whitespace-pre-line"
         style={clampStyle}
       >
         {text}
@@ -77,7 +77,7 @@ function ScoreBar({ label, value, hint, colorClass = "bg-brand" }) {
   const pct = Math.min(Math.max(value, 0), 100);
   return (
     <div className="space-y-1.5">
-      <div className="flex justify-between items-center text-sm">
+      <div className="flex justify-between items-center text-xs">
         <span className="text-black">{label}</span>
         <span className="font-bold text-black tabular-nums">{pct.toFixed(1)}</span>
       </div>
@@ -175,14 +175,14 @@ export default function NovelModal({ novel, onClose }) {
         {/* 头部 */}
         <div className="sticky top-0 bg-white
                         flex items-center justify-between px-6 py-4 rounded-t-lg z-10">
-          <h2 className="text-lg font-bold text-black pr-4 line-clamp-1">
+          <h2 className="text-base font-bold text-black pr-4 line-clamp-1">
             {novel.title || "（无标题）"}
           </h2>
           <button
             onClick={closeWithAnimation}
             className="flex-shrink-0 w-8 h-8 rounded bg-slate-100 hover:bg-brand-light
                        flex items-center justify-center text-black hover:text-brand
-                       transition-colors duration-200 text-lg leading-none"
+                       transition-colors duration-200 text-base leading-none"
             aria-label="关闭"
           >
             ×
@@ -192,7 +192,7 @@ export default function NovelModal({ novel, onClose }) {
         {/* 内容区 */}
         <div className="px-6 py-5 space-y-6">
           {/* 元信息行 */}
-          <div className="flex flex-wrap gap-2 text-sm">
+          <div className="flex flex-wrap gap-2 text-xs">
             <span className="px-3 py-1 bg-slate-100 rounded text-black">
               {novel.platform}
             </span>
@@ -236,10 +236,10 @@ export default function NovelModal({ novel, onClose }) {
           <div>
             <div className="flex items-baseline gap-3 mb-4">
               <h3 className="text-xs text-black font-medium">AI 短剧适配度 (GHI)</h3>
-              <span className="text-3xl font-black text-brand tabular-nums">
+              <span className="text-2xl font-black text-brand tabular-nums">
                 {novel.ghi}
               </span>
-              <span className="text-sm text-black">/ 100</span>
+              <span className="text-xs text-black">/ 100</span>
             </div>
             <div className="space-y-4">
               <ScoreBar
@@ -281,7 +281,7 @@ export default function NovelModal({ novel, onClose }) {
           {/* 热度逻辑提示 */}
           <div className="rounded-lg border border-zw-border bg-[#f7f8fa] p-4">
             <h3 className="text-xs text-black mb-1.5 font-medium">热度逻辑提示</h3>
-            <p className="text-sm text-black leading-relaxed">{adaptHint}</p>
+            <p className="text-xs text-black leading-relaxed">{adaptHint}</p>
           </div>
 
           {/* 数据统计 */}
@@ -292,7 +292,7 @@ export default function NovelModal({ novel, onClose }) {
             ].map(({ label, value }) => (
               <div key={label} className="rounded-lg border border-zw-border bg-[#f7f8fa] p-3 text-center">
                 <div className="text-xs text-black mb-1">{label}</div>
-                <div className="text-xl font-bold text-black tabular-nums">{value}</div>
+                <div className="text-lg font-bold text-black tabular-nums">{value}</div>
               </div>
             ))}
           </div>
@@ -302,7 +302,7 @@ export default function NovelModal({ novel, onClose }) {
             href={novel.original_url || "#"}
             target="_blank"
             rel="noopener noreferrer"
-            className="block w-full text-center py-3 rounded font-semibold text-sm
+            className="block w-full text-center py-3 rounded font-semibold text-xs
                        bg-brand hover:bg-brand-dark text-black transition-colors"
           >
             访问原站查看全文

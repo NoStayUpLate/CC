@@ -85,13 +85,39 @@ CREATE TABLE IF NOT EXISTS dramas (
 )
 """
 
+# 资源位每日历史快照：dramas 表的 ON CONFLICT 会把昨天的 rank 覆盖掉，
+# 这张表每个 (platform, title, crawl_date) 保留一行，专门给前端画"资源位变化曲线"用。
+# 写入入口收敛在 batch_insert_dramas 内，外部代码不用关心。
+_CREATE_DRAMA_RANK_HISTORY_SQL = """
+CREATE TABLE IF NOT EXISTS drama_rank_history (
+    platform          VARCHAR    NOT NULL,
+    title             VARCHAR    NOT NULL,
+    crawl_date        DATE       NOT NULL,
+    rank_in_platform  SMALLINT   NOT NULL,
+    rank_type         VARCHAR    DEFAULT '',
+    created_at        TIMESTAMP  DEFAULT current_timestamp,
+    PRIMARY KEY (platform, title, crawl_date)
+)
+"""
+
 
 def init_db() -> None:
-    """启动时建表（幂等）。"""
+    """启动时建表（幂等）+ 一次性 backfill 资源位历史。"""
     con = get_client()
     with _lock:
         con.execute(_CREATE_NOVELS_SQL)
         con.execute(_CREATE_DRAMAS_SQL)
+        con.execute(_CREATE_DRAMA_RANK_HISTORY_SQL)
+        # 仅在历史表为空时把当前 dramas 快照灌进去，让现有剧也有 1 个起点
+        empty = con.execute("SELECT count(*) FROM drama_rank_history").fetchone()
+        if empty and empty[0] == 0:
+            con.execute("""
+                INSERT INTO drama_rank_history (platform, title, crawl_date, rank_in_platform, rank_type)
+                SELECT platform, title, crawl_date, rank_in_platform, rank_type
+                FROM dramas
+                WHERE rank_in_platform > 0 AND crawl_date IS NOT NULL
+                ON CONFLICT (platform, title, crawl_date) DO NOTHING
+            """)
 
 
 async def init_db_async() -> None:
@@ -191,6 +217,15 @@ ON CONFLICT (platform, title) DO UPDATE SET
 """
 
 
+_INSERT_DRAMA_RANK_HISTORY_SQL = """
+INSERT INTO drama_rank_history (platform, title, crawl_date, rank_in_platform, rank_type)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT (platform, title, crawl_date) DO UPDATE SET
+    rank_in_platform = EXCLUDED.rank_in_platform,
+    rank_type        = EXCLUDED.rank_type
+"""
+
+
 def batch_insert_dramas(rows: list[dict]) -> int:
     if not rows:
         return 0
@@ -211,9 +246,25 @@ def batch_insert_dramas(rows: list[dict]) -> int:
         )
         for r in rows
     ]
+    # 历史快照：只记录有效名次（rank_in_platform > 0），避免脏数据污染曲线
+    history_data = [
+        (
+            r.get("platform", ""),
+            r.get("title", ""),
+            r.get("crawl_date") or date.today(),
+            int(r.get("rank_in_platform") or 0),
+            r.get("rank_type", ""),
+        )
+        for r in rows
+        if int(r.get("rank_in_platform") or 0) > 0
+        and (r.get("platform") or "")
+        and (r.get("title") or "")
+    ]
     con = get_client()
     with _lock:
         con.executemany(_INSERT_DRAMAS_SQL, data)
+        if history_data:
+            con.executemany(_INSERT_DRAMA_RANK_HISTORY_SQL, history_data)
     return len(data)
 
 

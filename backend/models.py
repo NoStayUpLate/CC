@@ -107,3 +107,15 @@ class DramasResponse(BaseModel):
     page: int
     page_size: int
     items: list[DramaOut]
+
+
+class RankHistoryPoint(BaseModel):
+    """单日资源位快照点（数值越小越好；用于侧拉框中的趋势曲线）"""
+    crawl_date: date
+    rank_in_platform: int
+
+
+class RankHistoryResponse(BaseModel):
+    platform: str
+    title: str
+    items: list[RankHistoryPoint]
