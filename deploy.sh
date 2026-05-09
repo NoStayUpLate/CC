@@ -147,7 +147,10 @@ cmd_status() {
     "${COMPOSE[@]}" --env-file "$ENV_FILE" ps
     echo ""
     log "健康检查："
-    if "${COMPOSE[@]}" --env-file "$ENV_FILE" exec -T backend curl -sf http://127.0.0.1:8000/health >/dev/null 2>&1; then
+    # 用 python 自带的 urllib 而非 curl —— 瘦身后的 backend 镜像默认不装 curl
+    if "${COMPOSE[@]}" --env-file "$ENV_FILE" exec -T backend \
+        python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=3).status==200 else 1)" \
+        >/dev/null 2>&1; then
         ok "backend /health  → OK"
     else
         warn "backend /health  → 异常或未就绪（首次启动稍等 30 秒后重试）"
