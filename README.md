@@ -1,27 +1,30 @@
 # 海外内容监测看板（小说 + 短剧）
 
-一个用于监测海外小说 IP 与海外短剧平台内容热度的全栈看板项目。后端 FastAPI + ClickHouse，前端 React/Vite + Tailwind，爬虫覆盖海外小说与海外短剧两类数据源。
+一个用于监测海外小说 IP 与海外短剧平台内容热度的全栈看板项目。后端 FastAPI + DuckDB（嵌入式），前端 React/Vite + Tailwind，爬虫覆盖海外小说与海外短剧两类数据源。
 
 ## 功能概览
 
 - **海外小说监测**：Wattpad（API）、Royal Road（周榜）、Syosetu（日/周/月榜）。
 - **海外短剧监测**：聚合抓取 NetShort、ShortMax、ReelShort、DramaBox、DramaReels、DramaWave、GoodShort、MoboReels 共 8 个平台。
 - **独立分表存储**：小说写入 `novels`，短剧写入 `dramas`，互不混合。
-- **GHI 适配度分析**（小说）：在 ClickHouse 查询层计算 `S_popular`、`S_engage`、`S_adapt` 与综合 `GHI`，并标记"黄金三秒钩子"。
-- **DHI 热度指数**（短剧）：在 ClickHouse 查询层计算 `S_tag`、`S_position`、`S_recency` 与综合 `DHI`（题材匹配 ×0.45 + 资源位强度 ×0.35 + 数据新鲜度 ×0.20）。
+- **GHI 适配度分析**（小说）：在 DuckDB 查询层计算 `S_popular`、`S_engage`、`S_adapt` 与综合 `GHI`，并标记"黄金三秒钩子"。
+- **DHI 热度指数**（短剧）：在 DuckDB 查询层计算 `S_tag`、`S_position`、`S_recency` 与综合 `DHI`（题材匹配 ×0.45 + 资源位强度 ×0.35 + 数据新鲜度 ×0.20）。
 - **短剧栏位识别**：按平台首页栏位写入 `rank_type`（如"轮播推荐 / 推荐栏位 / 最近上新 / 顶部推荐 / 近期热门"，具体名称由各平台决定）。
 - **选品罗盘可视化**：短剧 Tab 内嵌 3-Tab 可视化（数据概览 / 趋势洞察 / 表现榜单），含标签热度散点四象限、平台 × 栏位热力图。
 - **后台爬取任务**：API/前端触发，立即返回 `task_id`，前端轮询进度。
-- **APScheduler 定时任务**：日榜、周榜、月榜按 cron 自动跑。
+- **APScheduler 定时任务**：日榜、周榜、月榜按 cron 自动跑（生产建议关，跨境抓不到的话就只是失败循环）。
 
 ## 技术栈
 
 | 层 | 选型 |
 |----|------|
-| 后端 | Python · FastAPI · Uvicorn · clickhouse-connect · Playwright · BeautifulSoup · APScheduler |
+| 后端 | Python · FastAPI · Uvicorn · DuckDB · Playwright · BeautifulSoup · APScheduler |
 | 前端 | React 18 · Vite · Tailwind CSS · lucide-react |
-| 数据库 | ClickHouse（`novels` / `dramas` 两张主表） |
-| 部署 | Docker Compose / Windows 启动脚本 |
+| 数据库 | **DuckDB**（嵌入式单文件，`novels` / `dramas` 两张主表）|
+| 部署 | Docker Compose（瘦身版，2 个容器） / Windows 启动脚本 |
+
+> **2026-05 之前用的是 ClickHouse 同栈部署**，1C2G 服务器跑不动（CH 24.x 默认就要 600MB+ 内存），数据量又小（万级行），换成 DuckDB 后整体内存从 ~1.5GB 降到 ~250MB。
+> 历史代码 / 数据迁移见 [`scripts/migrate_ch_to_duckdb.py`](scripts/migrate_ch_to_duckdb.py)。
 
 ## 目录结构
 
@@ -30,7 +33,8 @@
 ├── backend/
 │   ├── main.py                          # FastAPI 入口，注册 router + lifespan
 │   ├── config.py                        # 配置项（pydantic-settings + .env）
-│   ├── database.py                      # ClickHouse DDL、迁移、批量写入
+│   ├── database.py                      # DuckDB 嵌入式连接 + DDL + 批量写入（含线程锁）
+│   ├── dashboard.duckdb                 # 数据库文件（gitignore，运行时生成）
 │   ├── models.py                        # Pydantic 数据模型
 │   ├── requirements.txt
 │   ├── routers/
@@ -54,7 +58,7 @@
 │   │            dramareels,dramawave,goodshort,moboreels}_scraper.py
 │   └── services/
 │       ├── scraper_service.py           # 小说后台任务 + 批量写入
-│       ├── drama_scraper_service.py     # 短剧后台任务 + OPTIMIZE FINAL
+│       ├── drama_scraper_service.py     # 短剧后台任务（DuckDB ON CONFLICT 自动去重）
 │       ├── scheduler.py                 # APScheduler 定时调度
 │       └── keyword_extractor.py         # 英语关键词提取（仅 en）
 ├── frontend/
@@ -92,7 +96,7 @@
 ```bash
 cd backend
 pip install -r requirements.txt
-python -m playwright install chromium     # 首次运行 Playwright 系爬虫前
+python -m playwright install chromium     # 首次运行 Playwright 系爬虫前；纯看 UI 不抓数据可跳过
 ```
 
 ### 2. 前端依赖
@@ -107,12 +111,8 @@ npm install
 后端读取 `backend/.env`，参考 [`backend/.env.example`](backend/.env.example)：
 
 ```env
-# ClickHouse
-CLICKHOUSE_HOST=localhost
-CLICKHOUSE_PORT=8123
-CLICKHOUSE_DATABASE=default
-CLICKHOUSE_USERNAME=default
-CLICKHOUSE_PASSWORD=
+# DuckDB（嵌入式单文件，无独立 server 进程）
+DUCKDB_PATH=./dashboard.duckdb
 
 # 爬虫
 SCRAPER_HEADLESS=true
@@ -121,8 +121,8 @@ SCRAPER_DELAY_MIN=1.0
 SCRAPER_DELAY_MAX=3.5
 HTTP_PROXY=
 
-# 定时任务
-SCHEDULE_ENABLED=true
+# 定时任务（境内服务器跨境抓不到时建议 false，避免空跑烧 CPU）
+SCHEDULE_ENABLED=false
 SCHEDULE_HOUR=2
 SCHEDULE_MINUTE=0
 SCHEDULE_LIMIT=100
@@ -138,7 +138,8 @@ AUTH_SQLITE_PATH=./auth_users.db
 REGISTRATION_CODE=         # 空串 = 关闭注册；非空 + sqlite 模式 = 启用自助注册
 ```
 
-> ⚠️ 真实数据库密码、`JWT_SECRET`、`AUTH_USERS` 不要提交到仓库。`JWT_SECRET` 缺失时后端启动会直接 fail-fast 退出。
+> ⚠️ `JWT_SECRET` / `AUTH_USERS` / `REGISTRATION_CODE` 不要提交到仓库。`JWT_SECRET` 缺失时后端启动会直接 fail-fast 退出。
+> DuckDB 不需要密码（嵌入式单文件，权限靠操作系统文件权限管理）。
 
 ## 鉴权与用户管理
 
@@ -231,7 +232,7 @@ npm run dev
 
 ### 方式三：Docker Compose（本地）
 
-`docker-compose.yml` 是**生产形态**（nginx + Caddy + 同源），本地开发请叠加 `docker-compose.dev.yml` override：
+`docker-compose.yml` 是**生产形态**（nginx + backend，瘦身后只剩 2 个容器），本地开发请叠加 `docker-compose.dev.yml` override：
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
@@ -239,64 +240,65 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 
 dev 模式下：
 - 后端暴露 `localhost:8000`，前端跑 vite dev `localhost:5173`
-- 不启动 Caddy，`COOKIE_SECURE=false`
-- 代码文件挂载进容器，支持热重载
+- 强制 `INSTALL_PLAYWRIGHT_CHROMIUM=true` 让爬虫能跑
+- `COOKIE_SECURE=false`，代码文件挂载进容器支持热重载
 
-> ClickHouse 不在 compose 内，需独立部署或指向已有实例。
+> DuckDB 数据库文件挂在 `backend_data` 卷里（`/data/dashboard.duckdb`），首次启动 backend 会自动建表。
 
-## 上云部署（阿里云 ECS）
+## 上云部署（阿里云 ECS，1C2G 即可）
 
-部署目标：阿里云 ECS（单 VPS Linux 主机）。架构：
+部署目标：阿里云 ECS（单 VPS Linux 主机），HTTP-only 默认形态。架构：
 
 ```
-浏览器 → Caddy(443/80, 自动 LE 证书) → frontend(nginx, /api 反代) → backend(FastAPI, 8000) → ClickHouse(外部)
+浏览器 → frontend(nginx, /api 反代) → backend(FastAPI + DuckDB, 8000)
+        :80                          /data/dashboard.duckdb（嵌入式）
 ```
+
+只有 2 个容器（backend + frontend），整体内存占用 ~250MB，1C2G 服务器即可流畅跑。
+
+> 需要 HTTPS / 自动签证书时，把 Caddy 服务加回 `docker-compose.yml`（可参考 git 历史）+ 安全组开 443 + `.env.production` 改 `COOKIE_SECURE=true`。
 
 ### 一键运维脚本 `deploy.sh`
 
-项目根目录的 [`deploy.sh`](deploy.sh) 封装了所有 docker compose 操作（带预检查 + 健康检查），所有运维动作都通过子命令调用：
+项目根目录的 [`deploy.sh`](deploy.sh) 封装了所有 docker compose 操作（带预检查 + 健康检查）：
 
 ```bash
 ./deploy.sh up          # 首次启动 / 平滑更新（默认）
 ./deploy.sh down        # 停止所有容器（数据卷保留）
 ./deploy.sh restart     # down + up
 ./deploy.sh status      # 容器状态 + /health 健康检查 + 访问地址
-./deploy.sh logs [svc]  # 跟随日志，svc ∈ {backend, frontend, caddy}
+./deploy.sh logs [svc]  # 跟随日志，svc ∈ {backend, frontend}
 ./deploy.sh update      # git pull + 重建镜像 + 平滑重启 + 清理悬挂镜像
 ./deploy.sh secret      # 生成一个 JWT_SECRET（粘进 .env.production）
 ./deploy.sh help        # 完整说明
 ```
 
-预检查内容：docker / docker compose 是否可用、`.env.production` 是否存在、`DOMAIN` / `JWT_SECRET` / `CLICKHOUSE_*` 是否填齐、`AUTH_BACKEND=file` 时 `AUTH_USERS` 是否仍是占位符。任何缺失会带可执行的修复命令直接退出。
+预检查内容：docker / docker compose 是否可用、`.env.production` 是否存在、`JWT_SECRET` 是否填齐（瘦身后唯一必填项）、`AUTH_BACKEND=file` 时 `AUTH_USERS` 是否仍是占位符。
 
-### 首次部署（5 步）
+### 首次部署（4 步）
 
 ```bash
 # 1. ECS 装 docker（以 Ubuntu 为例）
-curl -fsSL https://get.docker.com | sh
+curl -fsSL https://get.docker.com | sh -s -- --mirror Aliyun     # 国内 ECS 必须 --mirror Aliyun
 sudo usermod -aG docker $USER && newgrp docker
 
-# 2. 上传项目（scp / rsync / git clone 都可）
-scp -r drama_overseas_novel_project/ user@ecs-ip:/opt/
-cd /opt/drama_overseas_novel_project
+# 2. clone 项目
+cd /opt && git clone https://github.com/NoStayUpLate/CC.git && cd CC
 
 # 3. 准备 .env.production
 cp .env.production.example .env.production
 ./deploy.sh secret              # 把输出粘到 .env.production 的 JWT_SECRET=
-vim .env.production             # 填 DOMAIN / CLICKHOUSE_* / AUTH_USERS（或 AUTH_BACKEND=sqlite）
+vim .env.production             # 填 JWT_SECRET / AUTH_BACKEND / REGISTRATION_CODE 等
 
-# 4. 一键启动
+# 4. 一键启动（无 Chromium 镜像，1-3 分钟即可）
 ./deploy.sh up
-
-# 5. 看 Caddy 签证书的过程
-./deploy.sh logs caddy
 ```
 
 ### 必备前置条件
 
-- **域名**：A 记录指向 ECS 公网 IP（Caddy 才能签 Let's Encrypt 证书）
-- **安全组**：放开 80 / 443 入站
-- **`.env.production`** 至少填齐：`DOMAIN` / `JWT_SECRET` / `AUTH_USERS`（或 `AUTH_BACKEND=sqlite` 然后用 CLI 加用户）/ `CLICKHOUSE_*`
+- **安全组**：放开 80 入站（HTTPS 需要时再开 443）
+- **`.env.production`** 必填：`JWT_SECRET`；`AUTH_BACKEND=file` 时还要填 `AUTH_USERS`
+- **不需要**：域名、外部数据库、CH 密码、Chromium（生产不抓数据）
 
 ### 日常更新
 
@@ -308,16 +310,33 @@ vim .env.production             # 填 DOMAIN / CLICKHOUSE_* / AUTH_USERS（或 A
 
 ```bash
 # SQLite 模式下进容器加用户
-docker compose exec backend python -m auth.cli add-user alice -p xxx
+docker compose --env-file .env.production exec backend python -m auth.cli add-user alice -p xxx
 
-# 备份 SQLite 用户库
-docker run --rm -v drama_overseas_novel_project_backend_data:/data \
-  -v $(pwd):/backup alpine cp /data/auth_users.db /backup/
+# 备份用户库 + DuckDB（同一个卷下两个文件）
+docker run --rm -v cc_backend_data:/data -v $(pwd):/backup alpine \
+  tar czf /backup/backup-$(date +%Y%m%d).tgz /data/
+
+# DuckDB 进数据库交互查询（嵌入式，没独立 cli，借 backend 容器跑 python）
+docker compose --env-file .env.production exec backend python -c \
+  "import duckdb; c=duckdb.connect('/data/dashboard.duckdb'); \
+   print(c.execute('SELECT count(*) FROM novels').fetchone(), \
+         c.execute('SELECT count(*) FROM dramas').fetchone())"
+
+# 想跑爬虫？需要重 build 装 Chromium（约 +700MB 镜像，慎选境内 ECS）
+docker compose --env-file .env.production build \
+  --build-arg INSTALL_PLAYWRIGHT_CHROMIUM=true backend
 ```
 
-### 没有公网域名时的临时方案
+### 数据迁移（从本地 ClickHouse → DuckDB）
 
-把 `Caddyfile` 里的 `{$DOMAIN}` 改成 `:80`（明文 HTTP），同时把 `.env.production` 的 `COOKIE_SECURE` 改成 `false`，否则浏览器会拒绝种 cookie 导致登录后立即被踢回登录页。
+如果你之前在本地跑过 ClickHouse、积累了数据，[`scripts/migrate_ch_to_duckdb.py`](scripts/migrate_ch_to_duckdb.py) 可以一次性把 CH 的 `novels` / `dramas` 灌进 DuckDB（保留原 id 和 created_at）：
+
+```bash
+pip install clickhouse-connect    # 一次性，已不在 requirements.txt 里
+python scripts/migrate_ch_to_duckdb.py --reset
+```
+
+迁移完直接 `scp backend/dashboard.duckdb` 到服务器卷里即可。
 
 ## 前端命令
 
@@ -411,20 +430,21 @@ GET /health
 
 ### `novels`
 
-- 引擎：`ReplacingMergeTree`，`ORDER BY (platform, lang, title)`，按 `toYYYYMM(created_at)` 分区。
+- 主键：`(platform, lang, title)`，rescrape 时走 `INSERT ... ON CONFLICT DO UPDATE` 保留 id 和 created_at，对应 ClickHouse 时代的 `ReplacingMergeTree` 语义。
 - 核心字段：`title / summary / tags / views / likes / original_url / platform / lang / s_adapt / top_keywords / rank_type / created_at`。
-- `views` / `likes` 为 `Nullable(UInt64)`：抓不到时保持 `NULL`，**禁止用 0 占位**。
-- `s_adapt` 由爬虫端按标签预计算（`base_scraper._calc_s_adapt`），存入 `Float32`。
-- `top_keywords` 为 `Map(String, UInt32)`，仅英语小说写入。
+- `views` / `likes` 为可空 `BIGINT`：抓不到时保持 `NULL`，**禁止用 0 占位**。
+- `s_adapt` 由爬虫端按标签预计算（`base_scraper._calc_s_adapt`），存入 `FLOAT`。
+- `top_keywords` 落盘为 JSON 字符串（DuckDB 的 MAP 类型在 Python 绑定上较生涩，VARCHAR + json.dumps/json.loads 反而最省心），仅英语小说写入。
 
 ### `dramas`
 
-- 引擎：`ReplacingMergeTree(created_at)`，`ORDER BY (platform, title)`，分区同上。
+- 主键：`(platform, title)`，同样 ON CONFLICT 语义。
 - 核心字段：`title / summary / cover_url / tags / episodes / rank_in_platform / heat_score / platform / lang / rank_type / crawl_date / source_url / created_at`。
 - 列表 / 详情接口在 SELECT 时叠加 DHI 三分项与综合分（`s_tag` / `s_position` / `s_recency` / `dhi`），**不存储到表里**，每次查询动态计算。
-- 抓取完成后自动执行 `OPTIMIZE TABLE dramas FINAL` 触发去重合并。
 
-### GHI 算法（小说，在 ClickHouse SQL 内计算）
+> 完整 DDL 见 [`backend/database.py`](backend/database.py) 的 `_CREATE_NOVELS_SQL` / `_CREATE_DRAMAS_SQL`。
+
+### GHI 算法（小说，在 DuckDB SQL 内计算）
 
 ```text
 GHI = S_popular × 0.3 + S_engage × 0.3 + S_adapt × 0.4
@@ -436,7 +456,7 @@ has_hook  = summary 包含 reborn/rebirth/revenge/betrayed/transmigrat/identity/
             reincarnation/regression/villainess/abandoned/second chance 任一关键词
 ```
 
-### DHI 算法（短剧，在 ClickHouse SQL 内计算）
+### DHI 算法（短剧，在 DuckDB SQL 内计算）
 
 ```text
 DHI = S_tag × 0.45 + S_position × 0.35 + S_recency × 0.20
@@ -488,21 +508,18 @@ SCHEDULE_LIMIT=100        # 每平台每次爬取条数上限
 python -m playwright install chromium
 ```
 
-### ClickHouse 并发 session 报错
+### DuckDB 多线程写入冲突
 
-项目中 ClickHouse client 已设置 `autogenerate_session_id=False`，并在每次查询时通过 `database.get_client()` 取独立 client。如果在新代码里看到模块级 client 单例，请改为按需创建。
+DuckDB 单文件不允许多进程同时写入，单进程多线程靠 `database.py` 的模块级 `_lock` 串行化。**不要绕过 lock 直接 `duckdb.connect(path)` 第二次**——FastAPI 同步路由跑在线程池里，全部走 `database.get_client()` + `query_dicts()`/`query_scalar()` 即可。
 
 ### 短剧数据重复
 
-短剧抓取完成后会自动执行 `OPTIMIZE TABLE dramas FINAL`。手动调试后如仍残留重复行：
+DuckDB 在写入路径就走 `INSERT ... ON CONFLICT (platform, title) DO UPDATE`，rescrape 同 key 行会自动覆盖，**没有 `OPTIMIZE FINAL` 那一步**。如果要查所有 platform/title 重复情况：
 
 ```sql
-OPTIMIZE TABLE dramas FINAL;
+SELECT platform, title, count(*) FROM dramas GROUP BY 1,2 HAVING count(*) > 1;
+-- 正常应返回 0 行
 ```
-
-### 内网 ClickHouse 走代理失败
-
-`database.py` 启动时会自动把 ClickHouse 主机加入 `NO_PROXY`。如自定义了主机，记得同步更新该列表。
 
 ### 后端启动报 `JWT_SECRET 未配置`
 
@@ -524,11 +541,12 @@ vite.config.js 的 proxy 已默认透传 cookie，无需特殊配置。如自定
 ## 开发约定
 
 - 前端尽量使用 Tailwind CSS，不新增自定义 CSS。
-- 后端 SQL 必须使用 ClickHouse 参数化写法（`{name:Type}`），禁止字符串拼接用户输入。
+- 后端 SQL 必须使用 DuckDB 参数化写法（命名占位符 `$name` + `params` dict，或位置占位符 `?` + tuple），禁止字符串拼接用户输入。
 - 小说与短剧数据**必须分表**存储。
-- GHI / DHI 口径由 ClickHouse 统一计算，**前端只做展示**，不要重算。
+- GHI / DHI 口径由 DuckDB 统一计算，**前端只做展示**，不要重算。
 - 爬虫缺失数值返回 `None`，禁止 0/空串占位（会污染 GHI）。
 - 新增爬虫请走 [.claude/skills/add-scraper/SKILL.md](.claude/skills/add-scraper/SKILL.md) 的标准流程；AI 协作约定见 [CLAUDE.md](CLAUDE.md)。
 - **新增业务 router 必须挂在 `Depends(require_user)` 守卫下**，参考 [`backend/main.py`](backend/main.py) 的 `_protected` 注入方式，禁止裸出。
 - bcrypt 密码哈希统一走 [`backend/auth/password.py`](backend/auth/password.py) 的 `hash_password()`，不要直接调底层。
-- 真实环境变量、数据库密码、`JWT_SECRET`、`AUTH_USERS`、`auth_users.db` 都不要写入 README 或提交到仓库（`.gitignore` 已排除）。
+- DuckDB 连接是模块级共享单例，所有读写都走 `database.get_client()` + 内部 `_lock`，**不要在外部再开新连接**。
+- 真实环境变量、`JWT_SECRET`、`AUTH_USERS`、`REGISTRATION_CODE`、`auth_users.db`、`*.duckdb` 都不要写入 README 或提交到仓库（`.gitignore` 已排除）。
