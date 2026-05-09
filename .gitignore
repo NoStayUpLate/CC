@@ -11,6 +11,12 @@ auth_users.db-*
 backend/auth_users.db
 backend/auth_users.db-*
 
+# ── DuckDB 数据库文件（嵌入式，本地数据，不入仓）──
+*.duckdb
+*.duckdb.wal
+*.duckdb.tmp/
+backend/dashboard.duckdb
+
 # ── Python ──
 __pycache__/
 *.py[cod]
