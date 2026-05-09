@@ -15,9 +15,10 @@
 | 系统 | Ubuntu (具体版本通过 `cat /etc/os-release` 查) |
 | 主机名 | `iZbp1bwtkrvs37hx3ll5kuZ` |
 | SSH 端口 | 22（默认） |
-| HTTP 端口 | 80（已在阿里云安全组开放） |
-| HTTPS 端口 | 443（开放但目前未启用，无证书） |
-| 当前访问地址 | `http://223.4.250.171`（HTTP，无域名） |
+| HTTP 端口 | **3000**（安全组只开放 3000-4000 段，绕开标准 80） |
+| HTTPS 端口 | 暂未启用（无证书 / 无 Caddy） |
+| 当前访问地址 | `http://223.4.250.171:3000`（HTTP，无域名） |
+| `.env.production` 端口配置 | `HOST_HTTP_PORT=3000` |
 
 > 登录方式：用户掌握，不在本文档记录。
 
@@ -151,6 +152,11 @@ docker compose --env-file .env.production exec backend python -m auth.cli add-us
 8. **跨境网络限制** → 当前未解决，是项目最大瓶颈（生产 backend 默认不装 Chromium，因为爬虫跨境跑也是失败循环）
 9. **ClickHouse 在阿里云 ECS 上 NUMA syscall 被 seccomp 拦** → 起初加 `cap_add: SYS_NICE / IPC_LOCK` + `seccomp=unconfined` 解决；后来直接换 DuckDB 嵌入式，问题不复存在
 10. **1C2G 内存不够** → 整体瘦身：CH→DuckDB（省 600MB）+ 去掉 Caddy（省 30MB）+ 默认不装 Chromium（省 300MB 内存 + 700MB 镜像）
+11. **`./deploy.sh up` 报 Permission denied** → Windows commit 后 git 丢可执行位 → `chmod +x deploy.sh` 后再跑（commit `868d530` 之后存在）
+12. **deploy.sh status 误报 backend 异常** → 瘦身后 backend 镜像不再装 curl（`INSTALL_PLAYWRIGHT_CHROMIUM=false` 时跳过系统依赖），健康检查的 `exec backend curl -sf` 必然失败 → 改用 python urllib（commit `cfb6ad7`）
+13. **服务器安全组只放开 3000-4000 段，没开 80** → `docker-compose.yml` 原来硬编码 `80:80`，浏览器访问不到 → 加 `HOST_HTTP_PORT` 环境变量（commit `77037ee`），`.env.production` 设 `HOST_HTTP_PORT=3000`
+14. **scp 后 dashboard.duckdb 在 /opt/CC 看不到，但实际进了 docker volume** → docker run cp 步骤其实跑过 + scp 临时副本被某次 git 操作清掉；最终实际数据在 `/var/lib/docker/volumes/cc_backend_data/_data/dashboard.duckdb`。教训：cp 进卷后不要再依赖 /opt/CC/ 下的源文件
+15. **DuckDB 跨进程 lock 冲突** → backend 容器（PID 1）已经 open 了 DB，再 `exec backend python -c "duckdb.connect(...)"` 会报 `Conflicting lock is held in /usr/local/bin/python3.11 (PID 1)` → 验证数据应**通过 backend 自己的 API 走**（浏览器登录看），而不是再开第二个连接
 
 ---
 

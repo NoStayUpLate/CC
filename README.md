@@ -114,6 +114,11 @@ npm install
 # DuckDB（嵌入式单文件，无独立 server 进程）
 DUCKDB_PATH=./dashboard.duckdb
 
+# 前端宿主端口（部署时常用）
+# 默认 80。安全组只放开特定段（如阿里云轻量 3000-4000）时改这里：
+#   HOST_HTTP_PORT=3000  → 浏览器访问 http://<IP>:3000
+HOST_HTTP_PORT=80
+
 # 爬虫
 SCRAPER_HEADLESS=true
 SCRAPER_BATCH_SIZE=50
@@ -296,7 +301,7 @@ vim .env.production             # 填 JWT_SECRET / AUTH_BACKEND / REGISTRATION_C
 
 ### 必备前置条件
 
-- **安全组**：放开 80 入站（HTTPS 需要时再开 443）
+- **安全组**：放开访问端口入站。默认 80；如果云厂商策略只开放某个端口段（阿里云轻量常见 3000-4000），在 `.env.production` 加 `HOST_HTTP_PORT=<段内端口>`，并把对应端口加进安全组。
 - **`.env.production`** 必填：`JWT_SECRET`；`AUTH_BACKEND=file` 时还要填 `AUTH_USERS`
 - **不需要**：域名、外部数据库、CH 密码、Chromium（生产不抓数据）
 
